@@ -78,7 +78,8 @@ def load_panel(path: Path) -> pd.DataFrame:
             df[short + "_z"] = 0.0
             continue
         s = _scale(df[col], scale)
-        df[short + "_z"] = (s - s.mean()) / s.std(ddof=0).clip(lower=1e-6)
+        sd = max(float(s.std(ddof=0)), 1e-6)
+        df[short + "_z"] = (s - s.mean()) / sd
     return df
 
 
