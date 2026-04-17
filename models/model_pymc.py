@@ -30,7 +30,7 @@ import argparse
 import json
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -204,7 +204,7 @@ def main():
     df = load_panel(Path(args.panel))
     print(f"Panel: {len(df)} distritos con baseline + avance", file=sys.stderr)
 
-    ts = datetime.now().strftime("%Y%m%d_%H%M")
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%MZ")
     out_path = Path(args.out_dir) / f"pymc_{ts}.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -225,7 +225,7 @@ def main():
 
     report = {
         "modelo": "pymc_binomial_jerarquico",
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "snapshot_panel": str(Path(args.panel).name),
         "n_distritos_usados": len(df),
         "votos_contados_Sanchez": int(df["votos_Sanchez"].sum()),

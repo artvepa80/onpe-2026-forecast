@@ -1,6 +1,6 @@
 {
   "modelo": "pymc_binomial_jerarquico",
-  "timestamp": "2026-04-17T21:55:18",
+  "timestamp": "2026-04-17T21:55:18+00:00",
   "snapshot_panel": "district_panel.csv",
   "n_distritos_usados": 1870,
   "votos_contados_Sanchez": 1875252,
