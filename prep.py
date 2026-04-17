@@ -60,6 +60,40 @@ COD_SANCHEZ_2026 = "10"  # Juntos por el Perú — Roberto Sánchez Palomino
 
 
 # ---------------------------------------------------------------------------
+# Covariables INEI (ubigeo-peru-aumentado de Castagnetto)
+# ---------------------------------------------------------------------------
+def load_inei_covariates(path: Path) -> dict[str, dict]:
+    """Devuelve {reniec_ubigeo: {altitud, idh, pct_pobreza, densidad, ...}}.
+
+    Usamos la columna `reniec` para empatar con la codificación de ONPE
+    (Lima=14, Callao=24). La columna `inei` usa codificación distinta
+    (Lima=15, Callao=07).
+    """
+    out: dict[str, dict] = {}
+    with path.open(encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            ub = row["reniec"]
+            def _f(k):
+                v = row.get(k, "") or ""
+                try: return float(v)
+                except ValueError: return None
+            out[ub] = {
+                "altitud_m": _f("altitude"),
+                "idh_2019": _f("idh_2019"),
+                "pct_pobreza": _f("pct_pobreza_total"),
+                "pct_pobreza_ext": _f("pct_pobreza_extrema"),
+                "densidad_2020": _f("pob_densidad_2020"),
+                "vuln_alim": _f("indice_vulnerabilidad_alimentaria"),
+                "macroregion": (row.get("macroregion_inei") or "").strip() or None,
+                "lat": _f("latitude"),
+                "lon": _f("longitude"),
+                "superficie_km2": _f("superficie"),
+            }
+    return out
+
+
+# ---------------------------------------------------------------------------
 # 2021 baseline aggregation
 # ---------------------------------------------------------------------------
 def load_2021_baseline(path: Path, cod_la: str, cod_jpp: str) -> dict[str, dict]:
@@ -157,6 +191,8 @@ def fetch_live_snapshot(session, dep_filter=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--baseline-2021", default=str(DATA / "raw_2021_partidos.csv"))
+    ap.add_argument("--inei", default=str(DATA / "inei/ubigeo_distrito.csv"),
+                    help="CSV con covariables INEI por distrito (RENIEC ubigeo)")
     ap.add_argument("--out", default=str(DATA / "district_panel.csv"))
     ap.add_argument("--dep", help="Filtrar por ubigeo departamento")
     ap.add_argument("--cod-la-2021", default=COD_RP_2021)
@@ -178,30 +214,45 @@ def main():
     baseline = load_2021_baseline(Path(args.baseline_2021), args.cod_la_2021, args.cod_jpp_2021)
     print(f"  distritos 2021: {len(baseline)}", file=sys.stderr)
 
+    print(f"Cargando covariables INEI ({args.inei})...", file=sys.stderr)
+    inei = load_inei_covariates(Path(args.inei)) if Path(args.inei).exists() else {}
+    print(f"  distritos INEI: {len(inei)}", file=sys.stderr)
+
     fields = [
         "ubigeo_dep", "ubigeo_prov", "ubigeo_dist",
         "departamento", "provincia", "distrito",
         "votos_Sanchez", "votos_LA", "votos_validos_contados",
         "total_actas", "actas_contab", "actas_pendientes", "pct_avance_dist",
         "pct_RP_2021", "pct_JpP_2021", "total_emitidos_2021",
+        # Covariables INEI (Capa 1 econométrica)
+        "altitud_m", "idh_2019", "pct_pobreza", "pct_pobreza_ext",
+        "densidad_2020", "vuln_alim", "macroregion",
+        "lat", "lon", "superficie_km2",
     ]
 
     s = requests.Session(); s.headers.update(HEADERS)
     n_match = n_miss = 0
+    n_inei_match = n_inei_miss = 0
     with open(args.out, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fields); w.writeheader()
         for row in fetch_live_snapshot(s, args.dep):
             b = baseline.get(row["ubigeo_dist"]) or {}
-            if b:
-                n_match += 1
-            else:
-                n_miss += 1
+            if b: n_match += 1
+            else: n_miss += 1
             row["actas_pendientes"] = max(0, row["total_actas"] - row["actas_contab"])
             row["pct_RP_2021"] = b.get("pct_RP_2021")
             row["pct_JpP_2021"] = b.get("pct_JpP_2021")
             row["total_emitidos_2021"] = b.get("total_emitidos_2021")
+            # INEI join
+            ic = inei.get(row["ubigeo_dist"]) or {}
+            if ic: n_inei_match += 1
+            else: n_inei_miss += 1
+            for k in ("altitud_m","idh_2019","pct_pobreza","pct_pobreza_ext",
+                      "densidad_2020","vuln_alim","macroregion","lat","lon","superficie_km2"):
+                row[k] = ic.get(k)
             w.writerow(row)
-    print(f"OK. match 2021={n_match}, sin match={n_miss} -> {args.out}", file=sys.stderr)
+    print(f"OK. match 2021={n_match}/{n_match+n_miss}, "
+          f"INEI={n_inei_match}/{n_inei_match+n_inei_miss} -> {args.out}", file=sys.stderr)
 
 
 if __name__ == "__main__":

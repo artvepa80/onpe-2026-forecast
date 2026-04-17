@@ -47,26 +47,59 @@ def logit_safe(p, eps=1e-3):
     return np.log(p / (1 - p))
 
 
+ECON_COVARIATES = [
+    # (columna, nombre corto, escala recomendada)
+    ("altitud_m", "altitud_km", 1 / 1000.0),     # altitud en km (media ~1.5, std ~1.3)
+    ("idh_2019",  "idh",        1.0),            # ya en [0,1]
+    ("pct_pobreza", "pobreza",  1 / 100.0),       # a proporción
+    ("densidad_2020", "log_densidad", "log"),     # log1p por sesgo fuerte
+    ("vuln_alim", "vuln_alim", 1.0),              # ya en [0,1]
+]
+
+
+def _scale(series: pd.Series, mode):
+    if mode == "log":
+        return np.log1p(series.fillna(series.median()))
+    return series.fillna(series.median()) * mode
+
+
 def load_panel(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path)
-    # Filtrar filas útiles: con actas contadas y baseline 2021
     df = df.dropna(subset=["pct_RP_2021", "pct_JpP_2021"]).copy()
     df = df[df["votos_validos_contados"] > 0].reset_index(drop=True)
     df["pct_RP_2021"] = df["pct_RP_2021"].clip(lower=0.01) / 100.0
     df["pct_JpP_2021"] = df["pct_JpP_2021"].clip(lower=0.01) / 100.0
-    # Rate de votos válidos por acta (para proyectar pendientes)
     df["votos_por_acta"] = df["votos_validos_contados"] / df["actas_contab"].clip(lower=1)
     df["n_pend_est"] = (df["actas_pendientes"] * df["votos_por_acta"]).round().astype(int)
+
+    # Covariables INEI transformadas + estandarizadas (z-score) → coefs interpretables
+    for col, short, scale in ECON_COVARIATES:
+        if col not in df.columns:
+            df[short + "_z"] = 0.0
+            continue
+        s = _scale(df[col], scale)
+        df[short + "_z"] = (s - s.mean()) / s.std(ddof=0).clip(lower=1e-6)
     return df
 
 
 def fit_candidate(df: pd.DataFrame, candidato: str, baseline_col: str,
                   draws: int, tune: int, chains: int, seed: int):
-    """BetaBinomial jerárquico — reparametrización non-centered para convergencia."""
+    """BetaBinomial jerárquico non-centered + covariables econométricas estandarizadas.
+
+    logit(p_d) = α_dep[d] + β_2021·logit(baseline_d)
+                 + γ1·altitud_z + γ2·idh_z + γ3·pobreza_z
+                 + γ4·log_dens_z + γ5·vuln_alim_z
+                 + ε_d
+    """
     dep_idx, dep_levels = pd.factorize(df["ubigeo_dep"])
     y = df[f"votos_{candidato}"].astype(int).values
     n = df["votos_validos_contados"].astype(int).values
     x = logit_safe(df[baseline_col].values)
+
+    # Matriz de covariables estandarizadas (n_dist × n_cov)
+    cov_cols = [short + "_z" for _, short, _ in ECON_COVARIATES]
+    Xcov = df[cov_cols].values.astype(float)
+    n_cov = Xcov.shape[1]
 
     with pm.Model() as model:
         mu = pm.Normal("mu", 0.0, 2.5)
@@ -74,26 +107,26 @@ def fit_candidate(df: pd.DataFrame, candidato: str, baseline_col: str,
         sigma_dist = pm.HalfNormal("sigma_dist", 0.5)
         beta = pm.Normal("beta", 1.0, 0.5)
 
-        # ---- NON-CENTERED parametrización (clave para convergencia) ----
+        # Non-centered
         alpha_raw = pm.Normal("alpha_raw", 0.0, 1.0, shape=len(dep_levels))
         alpha = pm.Deterministic("alpha", mu + sigma_dep * alpha_raw)
         eps_raw = pm.Normal("eps_raw", 0.0, 1.0, shape=len(df))
         eps = sigma_dist * eps_raw
 
-        logit_p = alpha[dep_idx] + beta * x + eps
+        # Coeficientes econométricos (una por covariable, prior débil N(0, 0.5))
+        gamma = pm.Normal("gamma", 0.0, 0.5, shape=n_cov)
+
+        logit_p = alpha[dep_idx] + beta * x + pm.math.dot(Xcov, gamma) + eps
         p = pm.Deterministic("p", pm.math.sigmoid(logit_p))
 
-        # Overdispersion acotada: HalfNormal(15) evita que kappa explote
-        # a ~400 (binomial puro degenerado).
-        kappa = pm.HalfNormal("kappa", sigma=15.0) + 1.0   # +1 para estabilidad numérica
+        kappa = pm.HalfNormal("kappa", sigma=15.0) + 1.0
         pm.BetaBinomial("y_obs", n=n, alpha=p * kappa, beta=(1 - p) * kappa, observed=y)
 
         idata = pm.sample(draws=draws, tune=tune, chains=chains,
-                          cores=1,                     # evita fallos silenciosos de multiprocessing en CI
-                          nuts_sampler="pymc",         # evita backends alternos (numpyro/nutpie) por accidente
+                          cores=1, nuts_sampler="pymc",
                           random_seed=seed, progressbar=False,
                           target_accept=0.95, init="jitter+adapt_diag")
-    return idata, dep_levels
+    return idata, dep_levels, cov_cols
 
 
 def posterior_final_votes(idata, df, candidato, swing_sd_logit: float = 0.08):
@@ -137,6 +170,26 @@ def summarize(votes: np.ndarray, label: str) -> dict:
             "ci_low": float(q[0]), "ci_high": float(q[2])}
 
 
+def _coef_summary(idata, name: str) -> dict:
+    v = idata.posterior[name].stack(sample=("chain", "draw")).values.ravel()
+    q = np.quantile(v, [0.025, 0.5, 0.975])
+    return {"mediana": float(q[1]), "ci_low": float(q[0]), "ci_high": float(q[2]),
+            "sign_cert": float((v > 0).mean() if q[1] > 0 else (v < 0).mean())}
+
+
+def _gamma_summary(idata, cov_cols: list[str]) -> dict:
+    v = idata.posterior["gamma"].stack(sample=("chain", "draw")).values  # (cov, draws)
+    out = {}
+    for i, col in enumerate(cov_cols):
+        draws_i = v[i]
+        q = np.quantile(draws_i, [0.025, 0.5, 0.975])
+        out[col] = {
+            "mediana": float(q[1]), "ci_low": float(q[0]), "ci_high": float(q[2]),
+            "sign_cert": float((draws_i > 0).mean() if q[1] > 0 else (draws_i < 0).mean()),
+        }
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--panel", default=str(ROOT / "data/district_panel.csv"))
@@ -156,11 +209,11 @@ def main():
 
     t0 = time.time()
     print("Ajustando Sánchez...", file=sys.stderr)
-    idata_s, _ = fit_candidate(df, "Sanchez", "pct_JpP_2021",
-                               args.draws, args.tune, args.chains, args.seed)
+    idata_s, _, cov_cols = fit_candidate(df, "Sanchez", "pct_JpP_2021",
+                                         args.draws, args.tune, args.chains, args.seed)
     print("Ajustando López Aliaga...", file=sys.stderr)
-    idata_la, _ = fit_candidate(df, "LA", "pct_RP_2021",
-                                args.draws, args.tune, args.chains, args.seed + 1)
+    idata_la, _, _ = fit_candidate(df, "LA", "pct_RP_2021",
+                                   args.draws, args.tune, args.chains, args.seed + 1)
 
     votes_s = posterior_final_votes(idata_s, df, "Sanchez")
     votes_la = posterior_final_votes(idata_la, df, "LA")
@@ -190,11 +243,22 @@ def main():
         "sampler": {
             "draws": args.draws, "tune": args.tune, "chains": args.chains,
             "likelihood": "BetaBinomial (con overdispersion kappa)",
-            "rhat_max_sanchez": float(az.summary(idata_s, var_names=["mu","beta","sigma_dep","sigma_dist","kappa","alpha"])["r_hat"].max()),
-            "rhat_max_la": float(az.summary(idata_la, var_names=["mu","beta","sigma_dep","sigma_dist","kappa","alpha"])["r_hat"].max()),
+            "rhat_max_sanchez": float(az.summary(idata_s, var_names=["mu","beta","sigma_dep","sigma_dist","kappa","alpha","gamma"])["r_hat"].max()),
+            "rhat_max_la": float(az.summary(idata_la, var_names=["mu","beta","sigma_dep","sigma_dist","kappa","alpha","gamma"])["r_hat"].max()),
             "kappa_mean_sanchez": float(idata_s.posterior["kappa"].mean().item()),
             "kappa_mean_la": float(idata_la.posterior["kappa"].mean().item()),
             "tiempo_segundos": round(time.time() - t0, 1),
+        },
+        "econometria": {
+            "covariables": cov_cols,
+            "beta_2021": {
+                "Sanchez": _coef_summary(idata_s, "beta"),
+                "LA": _coef_summary(idata_la, "beta"),
+            },
+            "gamma": {
+                "Sanchez": _gamma_summary(idata_s, cov_cols),
+                "LA": _gamma_summary(idata_la, cov_cols),
+            },
         },
     }
     out_path.write_text(json.dumps(report, indent=2, ensure_ascii=False))
