@@ -1,0 +1,39 @@
+{
+  "modelo": "pymc_binomial_jerarquico",
+  "timestamp": "2026-04-17T12:58:15",
+  "snapshot_panel": "panel_callao_test.csv",
+  "n_distritos_usados": 7,
+  "votos_contados_Sanchez": 83010,
+  "votos_contados_LA": 82814,
+  "votos_pendientes_estimados": 26701,
+  "prediccion": {
+    "Sanchez": {
+      "candidato": "Sanchez",
+      "media": 87006.43,
+      "mediana": 87005.0,
+      "ci_low": 86899.0,
+      "ci_high": 87114.05
+    },
+    "LA": {
+      "candidato": "LA",
+      "media": 86951.01166666667,
+      "mediana": 86950.0,
+      "ci_low": 86833.0,
+      "ci_high": 87069.05
+    },
+    "diferencia_Sanchez_minus_LA": {
+      "mediana": 56.5,
+      "ci_low": -116.0,
+      "ci_high": 212.0999999999999
+    },
+    "P(Sanchez > LA)": 0.75
+  },
+  "sampler": {
+    "draws": 300,
+    "tune": 300,
+    "chains": 2,
+    "rhat_max_sanchez": 1.03,
+    "rhat_max_la": 1.02,
+    "tiempo_segundos": 45.3
+  }
+}
