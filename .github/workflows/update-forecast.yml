@@ -1,0 +1,61 @@
+name: Update forecast
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"   # cada 30 min
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: forecast
+  cancel-in-progress: false
+
+jobs:
+  forecast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('requirements.txt') }}
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build panel (scrape ONPE)
+        run: python prep.py --out data/district_panel.csv
+        env:
+          PYTHONUNBUFFERED: "1"
+
+      - name: Fit PyMC model
+        run: python models/model_pymc.py --panel data/district_panel.csv --draws 500 --tune 500 --chains 2
+
+      - name: Copy latest forecasts to docs/data
+        run: |
+          mkdir -p docs/data
+          cp -f forecasts/pymc_latest.json docs/data/pymc_latest.json || true
+          cp -f forecasts/brms_latest.json docs/data/brms_latest.json || true
+          cp -f data/district_panel.csv docs/data/district_panel.csv || true
+
+      - name: Commit updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A forecasts/ docs/data/ data/district_panel.csv || true
+          if git diff --cached --quiet; then
+            echo "Sin cambios"
+          else
+            git commit -m "forecast: auto-update $(date -u +%Y-%m-%dT%H:%M)"
+            git push
+          fi

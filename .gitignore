@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Local snapshots; only panel + forecasts tracked
+onpe_distritos*.csv
+*.log.csv
+/tmp/
+
+# Raw 2021 baseline is tracked (used by prep), but keep heavy intermediate off

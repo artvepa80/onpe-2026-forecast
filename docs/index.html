@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>ONPE 2026 — Forecast 2° puesto (Sánchez vs López Aliaga)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  :root { --fg:#111; --muted:#666; --bg:#fafafa; --card:#fff; --accent:#2563eb; --pos:#16a34a; --neg:#dc2626; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         margin: 0; padding: 2rem 1rem; background: var(--bg); color: var(--fg); }
+  .wrap { max-width: 1000px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin-bottom: 0.2rem; }
+  .sub { color: var(--muted); margin-bottom: 2rem; font-size: 0.95rem; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+  @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid #e5e7eb; border-radius: 8px; padding: 1.2rem; }
+  .card h2 { font-size: 1rem; margin: 0 0 0.8rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; }
+  .big { font-size: 2rem; font-weight: 700; line-height: 1; }
+  .label { font-size: 0.85rem; color: var(--muted); margin-top: 0.3rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th, td { padding: 0.5rem; text-align: left; border-bottom: 1px solid #eee; }
+  th { color: var(--muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px;
+           font-size: 0.8rem; font-weight: 600; background: #e5e7eb; }
+  .badge.hot { background: #fee2e2; color: #991b1b; }
+  canvas { max-width: 100%; height: 280px !important; }
+  footer { text-align: center; margin-top: 3rem; color: var(--muted); font-size: 0.8rem; }
+  a { color: var(--accent); }
+  .err { color: var(--neg); font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ONPE 2026 — Lucha por el 2° puesto</h1>
+  <div class="sub">Roberto Sánchez (JpP) vs Rafael López Aliaga (Renovación Popular) — forecast Bayesiano por distrito.
+    <span id="updated" class="badge"></span></div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Conteo actual ONPE</h2>
+      <div id="current"></div>
+    </div>
+    <div class="card">
+      <h2>P(Sánchez termina 2°)</h2>
+      <div class="big"><span id="psanchez-pymc">–</span> <span style="font-size:1rem;color:var(--muted);">PyMC</span></div>
+      <div class="big" style="margin-top:0.4rem;"><span id="psanchez-brms">–</span> <span style="font-size:1rem;color:var(--muted);">brms</span></div>
+      <div class="label">Probabilidad posterior</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom: 1.5rem;">
+    <h2>Forecast final de votos — mediana + CI 95%</h2>
+    <canvas id="chart"></canvas>
+  </div>
+
+  <div class="card">
+    <h2>Tabla comparativa</h2>
+    <table id="tbl">
+      <thead><tr><th>Modelo</th><th>Candidato</th>
+        <th class="num">Mediana</th><th class="num">CI 2.5%</th><th class="num">CI 97.5%</th>
+        <th class="num">P(2°)</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div id="err" class="err"></div>
+  </div>
+
+  <footer>
+    Código: <a href="https://github.com/artvepa80/onpe-2026-forecast">GitHub</a> ·
+    Datos: <a href="https://resultadoelectoral.onpe.gob.pe/">ONPE</a> ·
+    Actualiza cada ~30 min vía GitHub Actions
+  </footer>
+</div>
+
+<script>
+const fmt = n => n == null ? "–" : n.toLocaleString("es-PE", { maximumFractionDigits: 0 });
+const pct = p => p == null ? "–" : (p * 100).toFixed(1) + "%";
+
+async function load() {
+  const out = { pymc: null, brms: null, err: [] };
+  try { out.pymc = await (await fetch("./data/pymc_latest.json?ts=" + Date.now())).json(); }
+  catch (e) { out.err.push("pymc: " + e.message); }
+  try { out.brms = await (await fetch("./data/brms_latest.json?ts=" + Date.now())).json(); }
+  catch (e) { out.err.push("brms: " + e.message); }
+  return out;
+}
+
+function renderCurrent(report) {
+  if (!report) return;
+  const vs = report.votos_contados_Sanchez, vla = report.votos_contados_LA;
+  const leader = vs > vla ? "Sánchez" : "López Aliaga";
+  const diff = Math.abs(vs - vla);
+  document.getElementById("current").innerHTML = `
+    <div><b>Sánchez:</b> ${fmt(vs)} votos</div>
+    <div><b>López Aliaga:</b> ${fmt(vla)} votos</div>
+    <div style="margin-top:0.5rem;"><span class="badge ${diff < 20000 ? 'hot' : ''}">${leader} adelanta por ${fmt(diff)}</span></div>
+    <div class="label">Pendientes estimados: ${fmt(report.votos_pendientes_estimados)}</div>
+  `;
+  document.getElementById("updated").textContent = "Actualizado: " + new Date(report.timestamp).toLocaleString("es-PE");
+}
+
+function renderTable(reports) {
+  const tbody = document.querySelector("#tbl tbody");
+  tbody.innerHTML = "";
+  for (const [tag, r] of Object.entries(reports)) {
+    if (!r) continue;
+    const p = r.prediccion;
+    const pw = p["P(Sanchez > LA)"];
+    for (const cand of ["Sanchez", "LA"]) {
+      const row = p[cand];
+      tbody.insertAdjacentHTML("beforeend", `
+        <tr>
+          <td>${tag}</td><td>${cand === "Sanchez" ? "Sánchez" : "López Aliaga"}</td>
+          <td class="num">${fmt(row.mediana)}</td>
+          <td class="num">${fmt(row.ci_low)}</td>
+          <td class="num">${fmt(row.ci_high)}</td>
+          <td class="num">${cand === "Sanchez" ? pct(pw) : pct(1 - pw)}</td>
+        </tr>`);
+    }
+  }
+}
+
+function renderChart(reports) {
+  const labels = [], data = [], errors = [];
+  const models = Object.entries(reports).filter(([, r]) => r);
+  const ctxData = {
+    labels: ["Sánchez", "López Aliaga"],
+    datasets: models.map(([tag, r], i) => ({
+      label: tag,
+      data: [r.prediccion.Sanchez.mediana, r.prediccion.LA.mediana],
+      backgroundColor: i === 0 ? "rgba(37,99,235,0.7)" : "rgba(22,163,74,0.7)",
+      errorBars: {
+        "Sánchez": { plus: r.prediccion.Sanchez.ci_high - r.prediccion.Sanchez.mediana,
+                     minus: r.prediccion.Sanchez.mediana - r.prediccion.Sanchez.ci_low },
+        "López Aliaga": { plus: r.prediccion.LA.ci_high - r.prediccion.LA.mediana,
+                          minus: r.prediccion.LA.mediana - r.prediccion.LA.ci_low }
+      }
+    }))
+  };
+  const ctx = document.getElementById("chart");
+  if (window._chart) window._chart.destroy();
+  window._chart = new Chart(ctx, {
+    type: "bar",
+    data: ctxData,
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: { y: { beginAtZero: false, ticks: { callback: v => fmt(v) } } },
+      plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.y)}` } } }
+    }
+  });
+}
+
+load().then(({ pymc, brms, err }) => {
+  renderCurrent(pymc || brms);
+  renderTable({ PyMC: pymc, brms });
+  renderChart({ PyMC: pymc, brms });
+  document.getElementById("psanchez-pymc").textContent = pymc ? pct(pymc.prediccion["P(Sanchez > LA)"]) : "–";
+  document.getElementById("psanchez-brms").textContent = brms ? pct(brms.prediccion["P(Sanchez > LA)"]) : "–";
+  document.getElementById("err").textContent = err.join(" · ");
+});
+</script>
+</body>
+</html>
