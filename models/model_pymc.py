@@ -62,7 +62,7 @@ def load_panel(path: Path) -> pd.DataFrame:
 
 def fit_candidate(df: pd.DataFrame, candidato: str, baseline_col: str,
                   draws: int, tune: int, chains: int, seed: int):
-    """Ajusta el modelo binomial jerárquico para un candidato."""
+    """Ajusta el modelo BetaBinomial jerárquico (con overdispersion) para un candidato."""
     dep_idx, dep_levels = pd.factorize(df["ubigeo_dep"])
     y = df[f"votos_{candidato}"].astype(int).values
     n = df["votos_validos_contados"].astype(int).values
@@ -78,23 +78,38 @@ def fit_candidate(df: pd.DataFrame, candidato: str, baseline_col: str,
 
         logit_p = alpha[dep_idx] + beta * x + eps
         p = pm.Deterministic("p", pm.math.sigmoid(logit_p))
-        pm.Binomial("y_obs", n=n, p=p, observed=y)
+
+        # Overdispersion: kappa chico = más ruido extra-binomial.
+        # HalfNormal(50) deja kappa flexible entre ~10 y ~150.
+        kappa = pm.HalfNormal("kappa", sigma=50.0)
+        pm.BetaBinomial("y_obs", n=n, alpha=p * kappa, beta=(1 - p) * kappa, observed=y)
 
         idata = pm.sample(draws=draws, tune=tune, chains=chains,
                           random_seed=seed, progressbar=False,
-                          target_accept=0.9)
+                          target_accept=0.95)
     return idata, dep_levels
 
 
 def posterior_final_votes(idata, df, candidato):
-    """Genera vector (draws,) de votos finales nacionales del candidato."""
-    p_draws = idata.posterior["p"].stack(sample=("chain", "draw")).values  # (dist, draws)
-    n_pend = df["n_pend_est"].values[:, None]                              # (dist, 1)
-    # Muestreo binomial posterior para cada acta pendiente
+    """Genera vector (draws,) de votos finales nacionales del candidato.
+
+    Usa BetaBinomial predictive para las actas pendientes — hereda la
+    overdispersion del modelo y da CIs honestos.
+    """
+    p_draws = idata.posterior["p"].stack(sample=("chain", "draw")).values       # (dist, draws)
+    kappa_draws = idata.posterior["kappa"].stack(sample=("chain", "draw")).values  # (draws,)
+    n_pend = df["n_pend_est"].values[:, None]                                   # (dist, 1)
+
     rng = np.random.default_rng(12345)
-    y_pend = rng.binomial(n_pend, p_draws)                                 # (dist, draws)
+    # BetaBinomial ~ Binomial(n, Beta(p*kappa, (1-p)*kappa))
+    a = p_draws * kappa_draws
+    b = (1.0 - p_draws) * kappa_draws
+    # Nos protegemos contra α/β ≤ 0 por números
+    a = np.clip(a, 1e-3, None); b = np.clip(b, 1e-3, None)
+    p_draw = rng.beta(a, b)
+    y_pend = rng.binomial(n_pend, p_draw)                                       # (dist, draws)
     y_counted = df[f"votos_{candidato}"].values[:, None]
-    total = (y_counted + y_pend).sum(axis=0)                               # (draws,)
+    total = (y_counted + y_pend).sum(axis=0)                                    # (draws,)
     return total
 
 
@@ -108,9 +123,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--panel", default=str(ROOT / "data/district_panel.csv"))
     ap.add_argument("--out-dir", default=str(FORECASTS))
-    ap.add_argument("--draws", type=int, default=1000)
-    ap.add_argument("--tune", type=int, default=1000)
-    ap.add_argument("--chains", type=int, default=2)
+    ap.add_argument("--draws", type=int, default=2000)
+    ap.add_argument("--tune", type=int, default=1500)
+    ap.add_argument("--chains", type=int, default=4)
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
@@ -156,8 +171,11 @@ def main():
         },
         "sampler": {
             "draws": args.draws, "tune": args.tune, "chains": args.chains,
-            "rhat_max_sanchez": float(az.summary(idata_s, var_names=["mu","beta","sigma_dep","sigma_dist"])["r_hat"].max()),
-            "rhat_max_la": float(az.summary(idata_la, var_names=["mu","beta","sigma_dep","sigma_dist"])["r_hat"].max()),
+            "likelihood": "BetaBinomial (con overdispersion kappa)",
+            "rhat_max_sanchez": float(az.summary(idata_s, var_names=["mu","beta","sigma_dep","sigma_dist","kappa"])["r_hat"].max()),
+            "rhat_max_la": float(az.summary(idata_la, var_names=["mu","beta","sigma_dep","sigma_dist","kappa"])["r_hat"].max()),
+            "kappa_mean_sanchez": float(idata_s.posterior["kappa"].mean().item()),
+            "kappa_mean_la": float(idata_la.posterior["kappa"].mean().item()),
             "tiempo_segundos": round(time.time() - t0, 1),
         },
     }
