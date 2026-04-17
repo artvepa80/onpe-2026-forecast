@@ -62,7 +62,7 @@ def load_panel(path: Path) -> pd.DataFrame:
 
 def fit_candidate(df: pd.DataFrame, candidato: str, baseline_col: str,
                   draws: int, tune: int, chains: int, seed: int):
-    """Ajusta el modelo BetaBinomial jerárquico (con overdispersion) para un candidato."""
+    """BetaBinomial jerárquico — reparametrización non-centered para convergencia."""
     dep_idx, dep_levels = pd.factorize(df["ubigeo_dep"])
     y = df[f"votos_{candidato}"].astype(int).values
     n = df["votos_validos_contados"].astype(int).values
@@ -72,44 +72,60 @@ def fit_candidate(df: pd.DataFrame, candidato: str, baseline_col: str,
         mu = pm.Normal("mu", 0.0, 2.5)
         sigma_dep = pm.HalfNormal("sigma_dep", 1.0)
         sigma_dist = pm.HalfNormal("sigma_dist", 0.5)
-        alpha = pm.Normal("alpha", mu, sigma_dep, shape=len(dep_levels))
-        beta = pm.Normal("beta", 1.0, 1.0)   # prior centrado en 1 (replica 2021)
-        eps = pm.Normal("eps", 0.0, sigma_dist, shape=len(df))
+        beta = pm.Normal("beta", 1.0, 0.5)
+
+        # ---- NON-CENTERED parametrización (clave para convergencia) ----
+        alpha_raw = pm.Normal("alpha_raw", 0.0, 1.0, shape=len(dep_levels))
+        alpha = pm.Deterministic("alpha", mu + sigma_dep * alpha_raw)
+        eps_raw = pm.Normal("eps_raw", 0.0, 1.0, shape=len(df))
+        eps = sigma_dist * eps_raw
 
         logit_p = alpha[dep_idx] + beta * x + eps
         p = pm.Deterministic("p", pm.math.sigmoid(logit_p))
 
-        # Overdispersion: kappa chico = más ruido extra-binomial.
-        # HalfNormal(50) deja kappa flexible entre ~10 y ~150.
-        kappa = pm.HalfNormal("kappa", sigma=50.0)
+        # Overdispersion acotada: HalfNormal(15) evita que kappa explote
+        # a ~400 (binomial puro degenerado).
+        kappa = pm.HalfNormal("kappa", sigma=15.0) + 1.0   # +1 para estabilidad numérica
         pm.BetaBinomial("y_obs", n=n, alpha=p * kappa, beta=(1 - p) * kappa, observed=y)
 
         idata = pm.sample(draws=draws, tune=tune, chains=chains,
                           random_seed=seed, progressbar=False,
-                          target_accept=0.95)
+                          target_accept=0.95, init="jitter+adapt_diag_grad")
     return idata, dep_levels
 
 
-def posterior_final_votes(idata, df, candidato):
+def posterior_final_votes(idata, df, candidato, swing_sd_logit: float = 0.08):
     """Genera vector (draws,) de votos finales nacionales del candidato.
 
-    Usa BetaBinomial predictive para las actas pendientes — hereda la
-    overdispersion del modelo y da CIs honestos.
+    Ingredientes de incertidumbre:
+      1. Posterior de p_d por distrito (modelo jerárquico)
+      2. BetaBinomial predictive (overdispersion extra-binomial)
+      3. **National swing** por draw: N(0, swing_sd_logit) en escala logit,
+         aplicado a las actas pendientes. Captura la incertidumbre de
+         "las actas que faltan se comportan distinto a las contadas"
+         (sesgo de llegada: rurales llegan tarde, extranjero atrasado).
+         swing_sd_logit=0.08 ≈ ±1.5 pp de swing nacional en el %.
     """
-    p_draws = idata.posterior["p"].stack(sample=("chain", "draw")).values       # (dist, draws)
-    kappa_draws = idata.posterior["kappa"].stack(sample=("chain", "draw")).values  # (draws,)
-    n_pend = df["n_pend_est"].values[:, None]                                   # (dist, 1)
+    p_draws = idata.posterior["p"].stack(sample=("chain", "draw")).values         # (dist, draws)
+    kappa_draws = idata.posterior["kappa"].stack(sample=("chain", "draw")).values   # (draws,)
+    n_pend = df["n_pend_est"].values[:, None]                                     # (dist, 1)
 
     rng = np.random.default_rng(12345)
-    # BetaBinomial ~ Binomial(n, Beta(p*kappa, (1-p)*kappa))
-    a = p_draws * kappa_draws
-    b = (1.0 - p_draws) * kappa_draws
-    # Nos protegemos contra α/β ≤ 0 por números
+    n_draws = p_draws.shape[1]
+
+    # National swing en escala logit, distinto en cada draw
+    swing = rng.normal(0.0, swing_sd_logit, size=n_draws)                          # (draws,)
+    logit_p = np.log(np.clip(p_draws, 1e-6, 1 - 1e-6) / np.clip(1 - p_draws, 1e-6, None))
+    p_pend = 1.0 / (1.0 + np.exp(-(logit_p + swing)))                              # (dist, draws)
+
+    # BetaBinomial predictive
+    a = p_pend * kappa_draws
+    b = (1.0 - p_pend) * kappa_draws
     a = np.clip(a, 1e-3, None); b = np.clip(b, 1e-3, None)
-    p_draw = rng.beta(a, b)
-    y_pend = rng.binomial(n_pend, p_draw)                                       # (dist, draws)
+    p_draw_sample = rng.beta(a, b)
+    y_pend = rng.binomial(n_pend, p_draw_sample)                                   # (dist, draws)
     y_counted = df[f"votos_{candidato}"].values[:, None]
-    total = (y_counted + y_pend).sum(axis=0)                                    # (draws,)
+    total = (y_counted + y_pend).sum(axis=0)                                       # (draws,)
     return total
 
 
@@ -172,8 +188,8 @@ def main():
         "sampler": {
             "draws": args.draws, "tune": args.tune, "chains": args.chains,
             "likelihood": "BetaBinomial (con overdispersion kappa)",
-            "rhat_max_sanchez": float(az.summary(idata_s, var_names=["mu","beta","sigma_dep","sigma_dist","kappa"])["r_hat"].max()),
-            "rhat_max_la": float(az.summary(idata_la, var_names=["mu","beta","sigma_dep","sigma_dist","kappa"])["r_hat"].max()),
+            "rhat_max_sanchez": float(az.summary(idata_s, var_names=["mu","beta","sigma_dep","sigma_dist","kappa","alpha"])["r_hat"].max()),
+            "rhat_max_la": float(az.summary(idata_la, var_names=["mu","beta","sigma_dep","sigma_dist","kappa","alpha"])["r_hat"].max()),
             "kappa_mean_sanchez": float(idata_s.posterior["kappa"].mean().item()),
             "kappa_mean_la": float(idata_la.posterior["kappa"].mean().item()),
             "tiempo_segundos": round(time.time() - t0, 1),

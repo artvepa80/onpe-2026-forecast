@@ -1,6 +1,6 @@
 {
   "modelo": "pymc_binomial_jerarquico",
-  "timestamp": "2026-04-17T13:57:18",
+  "timestamp": "2026-04-17T14:04:10",
   "snapshot_panel": "district_panel.csv",
   "n_distritos_usados": 1861,
   "votos_contados_Sanchez": 1865887,
@@ -9,22 +9,22 @@
   "prediccion": {
     "Sanchez": {
       "candidato": "Sanchez",
-      "media": 2049637.902375,
-      "mediana": 2049338.0,
-      "ci_low": 2034669.95,
-      "ci_high": 2066188.425
+      "media": 2049989.022,
+      "mediana": 2049762.0,
+      "ci_low": 2023944.95,
+      "ci_high": 2078360.675
     },
     "LA": {
       "candidato": "LA",
-      "media": 1917458.3235,
-      "mediana": 1917455.0,
-      "ci_low": 1913653.9,
-      "ci_high": 1921317.075
+      "media": 1915086.34375,
+      "mediana": 1914873.5,
+      "ci_low": 1900837.825,
+      "ci_high": 1930178.05
     },
     "diferencia_Sanchez_minus_LA": {
-      "mediana": 131946.0,
-      "ci_low": 116838.75,
-      "ci_high": 149017.77499999997
+      "mediana": 134665.0,
+      "ci_low": 116699.475,
+      "ci_high": 154812.77499999997
     },
     "P(Sanchez > LA)": 1.0
   },
@@ -33,10 +33,10 @@
     "tune": 1500,
     "chains": 4,
     "likelihood": "BetaBinomial (con overdispersion kappa)",
-    "rhat_max_sanchez": 1.65,
-    "rhat_max_la": 1.0,
-    "kappa_mean_sanchez": 11.450473656800638,
-    "kappa_mean_la": 396.16935466493516,
-    "tiempo_segundos": 198.1
+    "rhat_max_sanchez": 1.02,
+    "rhat_max_la": 1.02,
+    "kappa_mean_sanchez": 10.425898184869498,
+    "kappa_mean_la": 159.20655992988932,
+    "tiempo_segundos": 159.2
   }
 }
