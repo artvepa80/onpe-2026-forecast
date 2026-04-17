@@ -89,6 +89,8 @@ def fit_candidate(df: pd.DataFrame, candidato: str, baseline_col: str,
         pm.BetaBinomial("y_obs", n=n, alpha=p * kappa, beta=(1 - p) * kappa, observed=y)
 
         idata = pm.sample(draws=draws, tune=tune, chains=chains,
+                          cores=1,                     # evita fallos silenciosos de multiprocessing en CI
+                          nuts_sampler="pymc",         # evita backends alternos (numpyro/nutpie) por accidente
                           random_seed=seed, progressbar=False,
                           target_accept=0.95, init="jitter+adapt_diag")
     return idata, dep_levels
