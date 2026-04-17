@@ -55,8 +55,8 @@ HEADERS = {
 # Códigos a usar en el match (se pueden sobreescribir con flags)
 COD_RP_2021 = "00000020"    # Renovación Popular — López Aliaga (2021)
 COD_JPP_2021 = "00000008"   # Juntos por el Perú — Mendoza (proxy de Sánchez, 2021)
-COD_LA_2026 = "35"
-COD_SANCHEZ_2026 = "16"
+COD_LA_2026 = "35"       # Renovación Popular — Rafael López Aliaga
+COD_SANCHEZ_2026 = "10"  # Juntos por el Perú — Roberto Sánchez Palomino
 
 
 # ---------------------------------------------------------------------------
