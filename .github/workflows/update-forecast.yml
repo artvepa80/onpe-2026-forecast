@@ -55,7 +55,18 @@ jobs:
           git add -A forecasts/ docs/data/ data/district_panel.csv || true
           if git diff --cached --quiet; then
             echo "Sin cambios"
-          else
-            git commit -m "forecast: auto-update $(date -u +%Y-%m-%dT%H:%M)"
-            git push
+            exit 0
           fi
+          git commit -m "forecast: auto-update $(date -u +%Y-%m-%dT%H:%M)"
+          # Resiliencia a pushes concurrentes a main
+          for i in 1 2 3 4 5; do
+            git pull --rebase --autostash origin main || true
+            if git push; then
+              echo "Push OK (intento $i)"
+              exit 0
+            fi
+            echo "Push rechazado en intento $i, reintentando..."
+            sleep 5
+          done
+          echo "Push falló tras 5 intentos" >&2
+          exit 1
