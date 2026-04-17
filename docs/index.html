@@ -46,7 +46,7 @@
     <div class="card">
       <h2>P(Sánchez termina 2°)</h2>
       <div class="big"><span id="psanchez-pymc">–</span> <span style="font-size:1rem;color:var(--muted);">PyMC</span></div>
-      <div class="big" style="margin-top:0.4rem;"><span id="psanchez-brms">–</span> <span style="font-size:1rem;color:var(--muted);">brms</span></div>
+      <div id="brms-row" style="display:none;" class="big" style="margin-top:0.4rem;"><span id="psanchez-brms">–</span> <span style="font-size:1rem;color:var(--muted);">brms</span></div>
       <div class="label">Probabilidad posterior</div>
     </div>
   </div>
@@ -67,6 +67,22 @@
     <div id="err" class="err"></div>
   </div>
 
+  <div class="card" style="margin-top: 1.5rem;">
+    <h2>Coeficientes econométricos (Capa 1)</h2>
+    <div class="label" style="margin-bottom: 0.6rem;">
+      γ = efecto de cada covariable estandarizada sobre logit(voto). Positivo = más voto;
+      negativo = menos voto. "Certeza" = P(signo correcto | posterior).
+    </div>
+    <table id="econ">
+      <thead><tr><th>Candidato</th><th>Covariable</th>
+        <th class="num">γ mediana</th><th class="num">CI 95%</th><th class="num">Certeza signo</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div id="econ-empty" class="label" style="display:none;">
+      Los coeficientes econométricos aparecerán tras el próximo run exitoso del modelo.
+    </div>
+  </div>
+
   <footer>
     Código: <a href="https://github.com/artvepa80/onpe-2026-forecast">GitHub</a> ·
     Datos: <a href="https://resultadoelectoral.onpe.gob.pe/">ONPE</a> ·
@@ -78,13 +94,20 @@
 const fmt = n => n == null ? "–" : n.toLocaleString("es-PE", { maximumFractionDigits: 0 });
 const pct = p => p == null ? "–" : (p * 100).toFixed(1) + "%";
 
+async function loadOne(url) {
+  try {
+    const r = await fetch(url + "?ts=" + Date.now());
+    if (!r.ok) return null;   // 404 → modelo no disponible aún, no es error
+    return await r.json();
+  } catch (e) { return null; }
+}
+
 async function load() {
-  const out = { pymc: null, brms: null, err: [] };
-  try { out.pymc = await (await fetch("./data/pymc_latest.json?ts=" + Date.now())).json(); }
-  catch (e) { out.err.push("pymc: " + e.message); }
-  try { out.brms = await (await fetch("./data/brms_latest.json?ts=" + Date.now())).json(); }
-  catch (e) { out.err.push("brms: " + e.message); }
-  return out;
+  const [pymc, brms] = await Promise.all([
+    loadOne("./data/pymc_latest.json"),
+    loadOne("./data/brms_latest.json"),
+  ]);
+  return { pymc, brms, err: [] };
 }
 
 function renderCurrent(report) {
@@ -123,42 +146,111 @@ function renderTable(reports) {
 }
 
 function renderChart(reports) {
-  const labels = [], data = [], errors = [];
   const models = Object.entries(reports).filter(([, r]) => r);
-  const ctxData = {
-    labels: ["Sánchez", "López Aliaga"],
-    datasets: models.map(([tag, r], i) => ({
-      label: tag,
+  if (!models.length) return;
+  const labels = ["Sánchez", "López Aliaga"];
+  // Barras = mediana. Errores se dibujan como líneas verticales encima via plugin.
+  const datasets = [];
+  const errorBars = {};
+  models.forEach(([tag, r], i) => {
+    const color = i === 0 ? "rgba(37,99,235,0.75)" : "rgba(22,163,74,0.75)";
+    datasets.push({
+      label: tag + " (mediana)",
       data: [r.prediccion.Sanchez.mediana, r.prediccion.LA.mediana],
-      backgroundColor: i === 0 ? "rgba(37,99,235,0.7)" : "rgba(22,163,74,0.7)",
-      errorBars: {
-        "Sánchez": { plus: r.prediccion.Sanchez.ci_high - r.prediccion.Sanchez.mediana,
-                     minus: r.prediccion.Sanchez.mediana - r.prediccion.Sanchez.ci_low },
-        "López Aliaga": { plus: r.prediccion.LA.ci_high - r.prediccion.LA.mediana,
-                          minus: r.prediccion.LA.mediana - r.prediccion.LA.ci_low }
-      }
-    }))
+      backgroundColor: color,
+      borderColor: color.replace("0.75", "1"),
+      borderWidth: 1,
+    });
+    errorBars[tag] = [
+      { low: r.prediccion.Sanchez.ci_low, high: r.prediccion.Sanchez.ci_high },
+      { low: r.prediccion.LA.ci_low,      high: r.prediccion.LA.ci_high },
+    ];
+  });
+
+  // Plugin de error bars simple (Chart.js no los trae nativos)
+  const errorBarPlugin = {
+    id: "errorBars",
+    afterDatasetsDraw(chart) {
+      const { ctx, data } = chart;
+      data.datasets.forEach((ds, dsIdx) => {
+        const meta = chart.getDatasetMeta(dsIdx);
+        const tag = ds.label.replace(" (mediana)", "");
+        const eb = errorBars[tag]; if (!eb) return;
+        meta.data.forEach((bar, i) => {
+          const { x } = bar.getProps(["x"], true);
+          const yLow  = chart.scales.y.getPixelForValue(eb[i].low);
+          const yHigh = chart.scales.y.getPixelForValue(eb[i].high);
+          ctx.save();
+          ctx.strokeStyle = ds.borderColor;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(x, yLow); ctx.lineTo(x, yHigh);
+          ctx.moveTo(x - 6, yLow); ctx.lineTo(x + 6, yLow);
+          ctx.moveTo(x - 6, yHigh); ctx.lineTo(x + 6, yHigh);
+          ctx.stroke();
+          ctx.restore();
+        });
+      });
+    },
   };
-  const ctx = document.getElementById("chart");
+
   if (window._chart) window._chart.destroy();
-  window._chart = new Chart(ctx, {
+  window._chart = new Chart(document.getElementById("chart"), {
     type: "bar",
-    data: ctxData,
+    data: { labels, datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
       scales: { y: { beginAtZero: false, ticks: { callback: v => fmt(v) } } },
-      plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.y)}` } } }
-    }
+      plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.y)}` } } },
+    },
+    plugins: [errorBarPlugin],
   });
 }
 
-load().then(({ pymc, brms, err }) => {
+const COV_LABEL = {
+  altitud_km_z: "Altitud (km)",
+  idh_z: "IDH",
+  pobreza_z: "% Pobreza",
+  log_densidad_z: "log Densidad",
+  vuln_alim_z: "Vulnerabilidad alim.",
+};
+
+function renderEconometrics(report) {
+  const tbody = document.querySelector("#econ tbody");
+  tbody.innerHTML = "";
+  const econ = report && report.econometria;
+  if (!econ || !econ.gamma) {
+    document.getElementById("econ-empty").style.display = "block";
+    return;
+  }
+  document.getElementById("econ-empty").style.display = "none";
+  const fmtCI = r => `[${r.ci_low.toFixed(2)} ; ${r.ci_high.toFixed(2)}]`;
+  const fmtSig = c => `${(c * 100).toFixed(0)}%`;
+  for (const cand of ["Sanchez", "LA"]) {
+    const g = econ.gamma[cand] || {};
+    Object.entries(g).forEach(([cov, row]) => {
+      tbody.insertAdjacentHTML("beforeend", `
+        <tr>
+          <td>${cand === "Sanchez" ? "Sánchez" : "López Aliaga"}</td>
+          <td>${COV_LABEL[cov] || cov}</td>
+          <td class="num" style="color:${row.mediana > 0 ? 'var(--pos)' : 'var(--neg)'};">${row.mediana.toFixed(3)}</td>
+          <td class="num">${fmtCI(row)}</td>
+          <td class="num">${fmtSig(row.sign_cert)}</td>
+        </tr>`);
+    });
+  }
+}
+
+load().then(({ pymc, brms }) => {
   renderCurrent(pymc || brms);
-  renderTable({ PyMC: pymc, brms });
-  renderChart({ PyMC: pymc, brms });
+  renderTable({ PyMC: pymc, ...(brms ? { brms } : {}) });
+  renderChart({ PyMC: pymc, ...(brms ? { brms } : {}) });
+  renderEconometrics(pymc);
   document.getElementById("psanchez-pymc").textContent = pymc ? pct(pymc.prediccion["P(Sanchez > LA)"]) : "–";
-  document.getElementById("psanchez-brms").textContent = brms ? pct(brms.prediccion["P(Sanchez > LA)"]) : "–";
-  document.getElementById("err").textContent = err.join(" · ");
+  if (brms) {
+    document.getElementById("brms-row").style.display = "";
+    document.getElementById("psanchez-brms").textContent = pct(brms.prediccion["P(Sanchez > LA)"]);
+  }
 });
 </script>
 </body>
