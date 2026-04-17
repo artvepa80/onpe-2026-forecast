@@ -90,7 +90,7 @@ def fit_candidate(df: pd.DataFrame, candidato: str, baseline_col: str,
 
         idata = pm.sample(draws=draws, tune=tune, chains=chains,
                           random_seed=seed, progressbar=False,
-                          target_accept=0.95, init="jitter+adapt_diag_grad")
+                          target_accept=0.95, init="jitter+adapt_diag")
     return idata, dep_levels
 
 
