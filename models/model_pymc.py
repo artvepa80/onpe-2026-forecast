@@ -266,6 +266,7 @@ def main():
         "votos_pendientes_estimados": int(df["n_pend_est"].sum()),
         "votos_pend_normal": int(df["n_pend_normal"].sum()),
         "votos_pend_jee": int(df["n_pend_jee"].sum()),
+        "jee_total_nacional": int(df["actas_jee"].sum()) if "actas_jee" in df.columns else 0,
         "jee_por_departamento": (
             df.groupby("departamento")["actas_jee"].sum()
               .sort_values(ascending=False).head(10).to_dict()

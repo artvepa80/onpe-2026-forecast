@@ -240,9 +240,10 @@ function renderJEE(report) {
     totalEl.textContent = "(pendiente)";
     return;
   }
-  const total = Object.values(data).reduce((a, b) => a + b, 0);
+  // total_nacional preferido; si no está, suma lo visible (top 10) como aproximación
+  const topSum = Object.values(data).reduce((a, b) => a + b, 0);
+  const total = report.jee_total_nacional || topSum;
   totalEl.textContent = total.toLocaleString("es-PE");
-  // Ya viene ordenado desde el backend (top 10)
   for (const [dep, n] of Object.entries(data)) {
     const pct = (n / total) * 100;
     tbody.insertAdjacentHTML("beforeend", `
@@ -252,6 +253,12 @@ function renderJEE(report) {
         <td class="num">${pct.toFixed(1)}%</td>
       </tr>`);
   }
+  // Footer: indicar que es top 10
+  tbody.insertAdjacentHTML("beforeend", `
+    <tr><td colspan="3" style="color:var(--muted); font-size:0.85rem; padding-top:0.6rem;">
+      Mostrando Top 10 de ${Object.keys(data).length < 24 ? "los" : "24"} departamentos
+      (suma top 10 = ${topSum.toLocaleString("es-PE")}).
+    </td></tr>`);
 }
 
 function renderEconometrics(report) {
