@@ -180,6 +180,13 @@ def fetch_live_snapshot(session, dep_filter=None):
                 tot = _get(session, url_tot) or {}
                 votos_s = next((int(c["totalVotosValidos"]) for c in cands if c["codigoAgrupacionPolitica"] == COD_SANCHEZ_2026), 0)
                 votos_la = next((int(c["totalVotosValidos"]) for c in cands if c["codigoAgrupacionPolitica"] == COD_LA_2026), 0)
+                total_actas  = int(tot.get("totalActas") or 0)
+                contab       = int(tot.get("contabilizadas") or 0)
+                jee_enviadas = int(tot.get("enviadasJee") or 0)
+                jee_pend     = int(tot.get("pendientesJee") or 0)
+                actas_jee    = jee_enviadas + jee_pend
+                # Pendientes "normales" = total - contabilizadas - JEE
+                actas_pend_normal = max(0, total_actas - contab - actas_jee)
                 yield {
                     "ubigeo_dep": dep["ubigeo"],
                     "ubigeo_prov": prov["ubigeo"],
@@ -190,8 +197,12 @@ def fetch_live_snapshot(session, dep_filter=None):
                     "votos_Sanchez": votos_s,
                     "votos_LA": votos_la,
                     "votos_validos_contados": int(tot.get("totalVotosValidos") or 0),
-                    "total_actas": int(tot.get("totalActas") or 0),
-                    "actas_contab": int(tot.get("contabilizadas") or 0),
+                    "total_actas": total_actas,
+                    "actas_contab": contab,
+                    "actas_jee_enviadas": jee_enviadas,
+                    "actas_jee_pendientes": jee_pend,
+                    "actas_jee": actas_jee,
+                    "actas_pend_normal": actas_pend_normal,
                     "pct_avance_dist": float(tot.get("actasContabilizadas") or 0),
                 }
                 time.sleep(0.12)
@@ -235,6 +246,8 @@ def main():
         "departamento", "provincia", "distrito",
         "votos_Sanchez", "votos_LA", "votos_validos_contados",
         "total_actas", "actas_contab", "actas_pendientes", "pct_avance_dist",
+        # Nuevo: desglose JEE (Capa 1 — resolución legal de observadas)
+        "actas_jee_enviadas", "actas_jee_pendientes", "actas_jee", "actas_pend_normal",
         "pct_RP_2021", "pct_JpP_2021", "total_emitidos_2021",
         # Covariables INEI (Capa 1 econométrica)
         "altitud_m", "idh_2019", "pct_pobreza", "pct_pobreza_ext",

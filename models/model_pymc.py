@@ -70,9 +70,17 @@ def load_panel(path: Path) -> pd.DataFrame:
     df["pct_RP_2021"] = df["pct_RP_2021"].clip(lower=0.01) / 100.0
     df["pct_JpP_2021"] = df["pct_JpP_2021"].clip(lower=0.01) / 100.0
     df["votos_por_acta"] = df["votos_validos_contados"] / df["actas_contab"].clip(lower=1)
-    df["n_pend_est"] = (df["actas_pendientes"] * df["votos_por_acta"]).round().astype(int)
 
-    # Covariables INEI transformadas + estandarizadas (z-score) → coefs interpretables
+    # Separar pendientes normales (alta confianza) vs JEE (baja confianza + anulación)
+    if "actas_pend_normal" not in df.columns:
+        # Panel viejo sin desglose JEE — todo pendiente es "normal"
+        df["actas_pend_normal"] = df["actas_pendientes"]
+        df["actas_jee"] = 0
+    df["n_pend_normal"] = (df["actas_pend_normal"].fillna(0) * df["votos_por_acta"]).round().astype(int)
+    df["n_pend_jee"]    = (df["actas_jee"].fillna(0)       * df["votos_por_acta"]).round().astype(int)
+    df["n_pend_est"]    = df["n_pend_normal"] + df["n_pend_jee"]  # compat retro
+
+    # Covariables INEI transformadas + estandarizadas (z-score)
     for col, short, scale in ECON_COVARIATES:
         if col not in df.columns:
             df[short + "_z"] = 0.0
@@ -130,38 +138,59 @@ def fit_candidate(df: pd.DataFrame, candidato: str, baseline_col: str,
     return idata, dep_levels, cov_cols
 
 
-def posterior_final_votes(idata, df, candidato, swing_sd_logit: float = 0.08):
+def posterior_final_votes(idata, df, candidato,
+                          swing_sd_logit: float = 0.08,
+                          jee_extra_sd_logit: float = 0.15,
+                          jee_anulacion_alpha: float = 3.0,
+                          jee_anulacion_beta: float = 57.0):
     """Genera vector (draws,) de votos finales nacionales del candidato.
 
-    Ingredientes de incertidumbre:
-      1. Posterior de p_d por distrito (modelo jerárquico)
-      2. BetaBinomial predictive (overdispersion extra-binomial)
-      3. **National swing** por draw: N(0, swing_sd_logit) en escala logit,
-         aplicado a las actas pendientes. Captura la incertidumbre de
-         "las actas que faltan se comportan distinto a las contadas"
-         (sesgo de llegada: rurales llegan tarde, extranjero atrasado).
-         swing_sd_logit=0.08 ≈ ±1.5 pp de swing nacional en el %.
+    Modelo de las actas pendientes en DOS bloques:
+
+      (A) Pendientes normales (contadas pronto, distribución estable):
+         p_pend_normal = sigmoid(logit(p_d) + swing_nacional)
+         y_pend_normal ~ BetaBinomial(n_normal, p·κ, (1-p)·κ)
+
+      (B) Pendientes JEE (observadas — revisión legal, alto riesgo):
+         p_pend_jee = sigmoid(logit(p_d) + swing_nacional + swing_jee)   ← ruido extra
+         fraccion_anulacion ~ Beta(α=3, β=57)  ~ media 5%, p95 ≈ 12%
+         y_pend_jee ~ BetaBinomial(n_jee·(1-frac_anulacion), p_jee·κ, (1-p_jee)·κ)
+
+    jee_extra_sd_logit=0.15 ≈ ±3 pp adicionales en el % — captura incertidumbre
+    por concentración geográfica (Lima=26.6% JEE, selva=18% JEE) y resolución
+    legal de apoderados.
     """
-    p_draws = idata.posterior["p"].stack(sample=("chain", "draw")).values         # (dist, draws)
-    kappa_draws = idata.posterior["kappa"].stack(sample=("chain", "draw")).values   # (draws,)
-    n_pend = df["n_pend_est"].values[:, None]                                     # (dist, 1)
+    p_draws    = idata.posterior["p"].stack(sample=("chain", "draw")).values         # (dist, draws)
+    kappa_draws = idata.posterior["kappa"].stack(sample=("chain", "draw")).values     # (draws,)
+    n_normal = df["n_pend_normal"].values[:, None]                                    # (dist, 1)
+    n_jee    = df["n_pend_jee"].values[:, None]                                       # (dist, 1)
 
     rng = np.random.default_rng(12345)
     n_draws = p_draws.shape[1]
 
-    # National swing en escala logit, distinto en cada draw
-    swing = rng.normal(0.0, swing_sd_logit, size=n_draws)                          # (draws,)
-    logit_p = np.log(np.clip(p_draws, 1e-6, 1 - 1e-6) / np.clip(1 - p_draws, 1e-6, None))
-    p_pend = 1.0 / (1.0 + np.exp(-(logit_p + swing)))                              # (dist, draws)
+    # Swings en escala logit
+    swing_nacional = rng.normal(0.0, swing_sd_logit, size=n_draws)                    # (draws,)
+    swing_jee      = rng.normal(0.0, jee_extra_sd_logit, size=n_draws)                # (draws,)
 
-    # BetaBinomial predictive
-    a = p_pend * kappa_draws
-    b = (1.0 - p_pend) * kappa_draws
-    a = np.clip(a, 1e-3, None); b = np.clip(b, 1e-3, None)
-    p_draw_sample = rng.beta(a, b)
-    y_pend = rng.binomial(n_pend, p_draw_sample)                                   # (dist, draws)
+    logit_p = np.log(np.clip(p_draws, 1e-6, 1 - 1e-6) / np.clip(1 - p_draws, 1e-6, None))
+    p_pend_normal = 1.0 / (1.0 + np.exp(-(logit_p + swing_nacional)))                 # (dist, draws)
+    p_pend_jee    = 1.0 / (1.0 + np.exp(-(logit_p + swing_nacional + swing_jee)))     # (dist, draws)
+
+    # (A) Pendientes normales
+    a = np.clip(p_pend_normal * kappa_draws, 1e-3, None)
+    b = np.clip((1 - p_pend_normal) * kappa_draws, 1e-3, None)
+    y_normal = rng.binomial(n_normal, rng.beta(a, b))
+
+    # (B) Pendientes JEE con fracción de anulación
+    frac_anul = rng.beta(jee_anulacion_alpha, jee_anulacion_beta, size=n_draws)       # (draws,)
+    n_jee_efectivo = (n_jee * (1.0 - frac_anul)).round().astype(int)                  # (dist, draws)
+    a_j = np.clip(p_pend_jee * kappa_draws, 1e-3, None)
+    b_j = np.clip((1 - p_pend_jee) * kappa_draws, 1e-3, None)
+    p_j_sample = rng.beta(a_j, b_j)
+    y_jee = rng.binomial(n_jee_efectivo, p_j_sample)
+
     y_counted = df[f"votos_{candidato}"].values[:, None]
-    total = (y_counted + y_pend).sum(axis=0)                                       # (draws,)
+    total = (y_counted + y_normal + y_jee).sum(axis=0)                                # (draws,)
     return total
 
 
@@ -235,6 +264,13 @@ def main():
         "votos_contados_Sanchez": int(df["votos_Sanchez"].sum()),
         "votos_contados_LA": int(df["votos_LA"].sum()),
         "votos_pendientes_estimados": int(df["n_pend_est"].sum()),
+        "votos_pend_normal": int(df["n_pend_normal"].sum()),
+        "votos_pend_jee": int(df["n_pend_jee"].sum()),
+        "jee_por_departamento": (
+            df.groupby("departamento")["actas_jee"].sum()
+              .sort_values(ascending=False).head(10).to_dict()
+            if "actas_jee" in df.columns else {}
+        ),
         "prediccion": {
             "Sanchez": summarize(votes_s, "Sanchez"),
             "LA": summarize(votes_la, "LA"),

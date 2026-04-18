@@ -68,6 +68,18 @@
   </div>
 
   <div class="card" style="margin-top: 1.5rem;">
+    <h2>Actas en revisión legal (JEE) por departamento</h2>
+    <div class="label" style="margin-bottom: 0.6rem;">
+      Distribución de las <b id="jee-total">–</b> actas observadas enviadas al Jurado Electoral
+      Especial. El modelo les aplica tasa de anulación ~5% + swing de ±3 pp respecto al normal.
+    </div>
+    <table id="jee">
+      <thead><tr><th>Departamento</th><th class="num">Actas JEE</th><th class="num">% del total nacional</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top: 1.5rem;">
     <h2>Coeficientes econométricos (Capa 1)</h2>
     <div class="label" style="margin-bottom: 0.6rem;">
       γ = efecto de cada covariable estandarizada sobre logit(voto). Positivo = más voto;
@@ -219,6 +231,29 @@ const COV_LABEL = {
   vuln_alim_z: "Vulnerabilidad alim.",
 };
 
+function renderJEE(report) {
+  const tbody = document.querySelector("#jee tbody");
+  tbody.innerHTML = "";
+  const totalEl = document.getElementById("jee-total");
+  const data = report && report.jee_por_departamento;
+  if (!data || !Object.keys(data).length) {
+    totalEl.textContent = "(pendiente)";
+    return;
+  }
+  const total = Object.values(data).reduce((a, b) => a + b, 0);
+  totalEl.textContent = total.toLocaleString("es-PE");
+  // Ya viene ordenado desde el backend (top 10)
+  for (const [dep, n] of Object.entries(data)) {
+    const pct = (n / total) * 100;
+    tbody.insertAdjacentHTML("beforeend", `
+      <tr>
+        <td>${dep}</td>
+        <td class="num">${n.toLocaleString("es-PE")}</td>
+        <td class="num">${pct.toFixed(1)}%</td>
+      </tr>`);
+  }
+}
+
 function renderEconometrics(report) {
   const tbody = document.querySelector("#econ tbody");
   tbody.innerHTML = "";
@@ -249,6 +284,7 @@ load().then(({ pymc, brms }) => {
   renderCurrent(pymc || brms);
   renderTable({ PyMC: pymc, ...(brms ? { brms } : {}) });
   renderChart({ PyMC: pymc, ...(brms ? { brms } : {}) });
+  renderJEE(pymc);
   renderEconometrics(pymc);
   document.getElementById("psanchez-pymc").textContent = pymc ? pct(pymc.prediccion["P(Sanchez > LA)"]) : "–";
   if (brms) {
