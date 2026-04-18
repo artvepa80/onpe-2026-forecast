@@ -122,21 +122,35 @@ Ambos modelos son matemáticamente equivalentes. Al cierre de 1ra vuelta
 `compare.py` evalúa: MAE en votos, cobertura del CI 95%, Brier score,
 dirección correcta.
 
-## GitHub Actions
+## GitHub Actions — flujo híbrido
 
 `.github/workflows/update-forecast.yml` corre cada 30 min:
 1. Checkout + Python 3.12 + cache pip
 2. `pip install -r requirements.txt`
-3. `python prep.py` (scrape ONPE + join 2021 + INEI)
-4. `python models/model_pymc.py --draws 500 --tune 500 --chains 2`
-5. Copia `forecasts/pymc_latest.json` a `docs/data/`
-6. `git pull --rebase + commit + push` con retry (tolera pushes concurrentes)
+3. Intenta scrape ONPE (3 intentos con backoff 60/120/180s)
+4. **Si el WAF de ONPE bloquea las IPs de GitHub runners**, cae a
+   `data/district_panel.csv` committeado (modo fallback — modelo corre con
+   el último panel que el usuario subió localmente)
+5. `python models/model_pymc.py --draws 500 --tune 500 --chains 2`
+6. Copia `forecasts/pymc_latest.json` a `docs/data/`
+7. `git pull --rebase + commit + push` con retry
 
 GitHub Pages autosirve `docs/` — el dashboard se refresca solo.
 
 **Forzar ejecución manual:**
 ```bash
 gh workflow run "Update forecast" --repo artvepa80/onpe-2026-forecast --ref main
+```
+
+### Refrescar panel desde tu máquina
+
+Si el WAF de ONPE está bloqueando al runner, scrape local y pushea:
+```bash
+.venv/bin/python prep.py --out data/district_panel.csv
+git add data/district_panel.csv
+git commit -m "data: refresh panel ONPE $(date +%Y-%m-%d_%H:%M)"
+git push
+# El workflow programado recoge el panel fresco en el próximo run
 ```
 
 ## Limitaciones conocidas

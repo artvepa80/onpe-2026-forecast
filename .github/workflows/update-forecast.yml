@@ -33,20 +33,35 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Build panel (scrape ONPE) — retry on WAF transient
+      - name: Build panel (scrape ONPE) — con fallback al panel commiteado
         env:
           PYTHONUNBUFFERED: "1"
         run: |
           set +e
-          for i in 1 2 3 4; do
+          # Guardar el panel comiteado como fallback antes del scrape
+          if [ -f data/district_panel.csv ]; then
+            cp data/district_panel.csv /tmp/panel_fallback.csv
+            FALLBACK_ROWS=$(wc -l < /tmp/panel_fallback.csv)
+            echo "Fallback disponible: $FALLBACK_ROWS filas en data/district_panel.csv"
+          fi
+          for i in 1 2 3; do
             echo "=== Scrape attempt $i ==="
-            python prep.py --out data/district_panel.csv && exit 0
-            # Backoff: 90s, 180s, 300s entre intentos (para que WAF relaje)
-            wait=$((90 * i))
-            echo "Scrape falló (intento $i). Esperando ${wait}s antes de reintentar..."
+            python prep.py --out /tmp/panel_fresh.csv && {
+              mv /tmp/panel_fresh.csv data/district_panel.csv
+              echo "Scrape OK: usando panel fresco."
+              exit 0
+            }
+            wait=$((60 * i))
+            echo "Scrape falló (intento $i). Esperando ${wait}s..."
             sleep $wait
           done
-          echo "Scrape falló 4 veces — abortando sin tocar forecast actual." >&2
+          # WAF bloqueó. Usar panel committeado si existe.
+          if [ -f /tmp/panel_fallback.csv ]; then
+            cp /tmp/panel_fallback.csv data/district_panel.csv
+            echo "::warning::WAF de ONPE bloqueó el scrape. Usando panel committeado como fallback."
+            exit 0
+          fi
+          echo "Scrape falló y no hay fallback. Abortando." >&2
           exit 1
 
       - name: Fit PyMC model
@@ -63,6 +78,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # district_panel.csv solo se committea si vino de scrape fresco
+          # (si fue fallback, queda idéntico al HEAD y git diff lo ignora)
           git add -A forecasts/ docs/data/ data/district_panel.csv || true
           if git diff --cached --quiet; then
             echo "Sin cambios"
