@@ -38,13 +38,15 @@ jobs:
           PYTHONUNBUFFERED: "1"
         run: |
           set +e
-          for i in 1 2 3; do
+          for i in 1 2 3 4; do
             echo "=== Scrape attempt $i ==="
             python prep.py --out data/district_panel.csv && exit 0
-            echo "Scrape falló (intento $i). Esperando 60s antes de reintentar..."
-            sleep 60
+            # Backoff: 90s, 180s, 300s entre intentos (para que WAF relaje)
+            wait=$((90 * i))
+            echo "Scrape falló (intento $i). Esperando ${wait}s antes de reintentar..."
+            sleep $wait
           done
-          echo "Scrape falló 3 veces — abortando sin tocar forecast actual." >&2
+          echo "Scrape falló 4 veces — abortando sin tocar forecast actual." >&2
           exit 1
 
       - name: Fit PyMC model

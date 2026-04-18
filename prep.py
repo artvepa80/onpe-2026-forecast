@@ -130,27 +130,47 @@ def load_2021_baseline(path: Path, cod_la: str, cod_jpp: str) -> dict[str, dict]
 # ---------------------------------------------------------------------------
 # 2026 live snapshot (reutiliza la misma API que onpe_distritos.py)
 # ---------------------------------------------------------------------------
-def _get(session, url, retries=5):
-    """GET con reintentos agresivos. Levanta RuntimeError si tras `retries`
-    intentos la respuesta no es JSON — eso desenmascara bloqueos del WAF
-    que devuelven HTML 200 de la SPA."""
+def warm_session(session):
+    """Hacer un GET al home de ONPE primero para adquirir cookies del WAF
+    (CloudFront/Incapsula). Sin esto, CI runners reciben 200 + HTML challenge
+    en vez de JSON."""
+    for _ in range(3):
+        try:
+            r = session.get("https://resultadoelectoral.onpe.gob.pe/main/presidenciales", timeout=30)
+            if r.ok:
+                return
+        except Exception:
+            pass
+        time.sleep(5)
+
+
+def _get(session, url, retries=5, warm_on_fail=True):
+    """GET con reintentos agresivos + backoff exponencial + re-warm del WAF.
+    Levanta RuntimeError si tras `retries` intentos la respuesta no es JSON."""
     last = None
     for i in range(retries):
         try:
-            r = session.get(url, timeout=25)
+            r = session.get(url, timeout=30)
             last = r
             if r.status_code == 204:
                 return None
             ct = r.headers.get("content-type", "")
             if r.ok and ct.startswith("application/json"):
                 return r.json().get("data")
-            # 200 + HTML = WAF/CloudFront devolviendo el SPA shell → no es JSON válido
-            if r.ok and "html" in ct:
-                pass
+            # 200 + HTML = WAF devolviendo challenge o SPA shell
+            if r.ok and ("html" in ct or "text" in ct):
+                # Re-warm después del 2do fallo para refrescar cookies WAF
+                if warm_on_fail and i >= 1:
+                    warm_session(session)
         except Exception as e:
             last = e
-        time.sleep(2.0 * (i + 1))
-    raise RuntimeError(f"ONPE API no respondió JSON tras {retries} intentos: {url} (último={getattr(last,'status_code',last)})")
+        # Backoff exponencial: 2, 4, 8, 16, 32 segundos
+        time.sleep(2.0 ** (i + 1))
+    raise RuntimeError(
+        f"ONPE API no respondió JSON tras {retries} intentos: {url} "
+        f"(último status={getattr(last,'status_code',last)}, "
+        f"content-type={getattr(last,'headers',{}).get('content-type','?') if hasattr(last,'headers') else '?'})"
+    )
 
 
 def fetch_live_snapshot(session, dep_filter=None):
@@ -256,6 +276,8 @@ def main():
     ]
 
     s = requests.Session(); s.headers.update(HEADERS)
+    print("Warming WAF session...", file=sys.stderr)
+    warm_session(s)
     n_match = n_miss = 0
     n_inei_match = n_inei_miss = 0
     n_rows = 0
