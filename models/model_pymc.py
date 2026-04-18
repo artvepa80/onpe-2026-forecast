@@ -203,6 +203,10 @@ def main():
 
     df = load_panel(Path(args.panel))
     print(f"Panel: {len(df)} distritos con baseline + avance", file=sys.stderr)
+    if len(df) < 100:
+        print(f"ERROR: panel tiene solo {len(df)} filas (< 100) — abortando antes de samplear.",
+              file=sys.stderr)
+        sys.exit(2)
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%MZ")
     out_path = Path(args.out_dir) / f"pymc_{ts}.json"

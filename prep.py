@@ -130,15 +130,27 @@ def load_2021_baseline(path: Path, cod_la: str, cod_jpp: str) -> dict[str, dict]
 # ---------------------------------------------------------------------------
 # 2026 live snapshot (reutiliza la misma API que onpe_distritos.py)
 # ---------------------------------------------------------------------------
-def _get(session, url, retries=3):
+def _get(session, url, retries=5):
+    """GET con reintentos agresivos. Levanta RuntimeError si tras `retries`
+    intentos la respuesta no es JSON — eso desenmascara bloqueos del WAF
+    que devuelven HTML 200 de la SPA."""
+    last = None
     for i in range(retries):
-        r = session.get(url, timeout=20)
-        if r.status_code == 204:
-            return None
-        if r.ok and r.headers.get("content-type", "").startswith("application/json"):
-            return r.json().get("data")
-        time.sleep(1.2 * (i + 1))
-    r.raise_for_status()
+        try:
+            r = session.get(url, timeout=25)
+            last = r
+            if r.status_code == 204:
+                return None
+            ct = r.headers.get("content-type", "")
+            if r.ok and ct.startswith("application/json"):
+                return r.json().get("data")
+            # 200 + HTML = WAF/CloudFront devolviendo el SPA shell → no es JSON válido
+            if r.ok and "html" in ct:
+                pass
+        except Exception as e:
+            last = e
+        time.sleep(2.0 * (i + 1))
+    raise RuntimeError(f"ONPE API no respondió JSON tras {retries} intentos: {url} (último={getattr(last,'status_code',last)})")
 
 
 def fetch_live_snapshot(session, dep_filter=None):
@@ -233,9 +245,11 @@ def main():
     s = requests.Session(); s.headers.update(HEADERS)
     n_match = n_miss = 0
     n_inei_match = n_inei_miss = 0
+    n_rows = 0
     with open(args.out, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fields); w.writeheader()
         for row in fetch_live_snapshot(s, args.dep):
+            n_rows += 1
             b = baseline.get(row["ubigeo_dist"]) or {}
             if b: n_match += 1
             else: n_miss += 1
@@ -251,7 +265,13 @@ def main():
                       "densidad_2020","vuln_alim","macroregion","lat","lon","superficie_km2"):
                 row[k] = ic.get(k)
             w.writerow(row)
-    print(f"OK. match 2021={n_match}/{n_match+n_miss}, "
+    # Sanity check: scrape nacional debería tener >1500 filas (1874 distritos total)
+    min_rows = 100 if args.dep else 1500
+    if n_rows < min_rows:
+        print(f"ERROR: solo {n_rows} filas scrapeadas (esperado ≥{min_rows}). "
+              f"Probable bloqueo WAF o caída ONPE. Abortando.", file=sys.stderr)
+        sys.exit(2)
+    print(f"OK. rows={n_rows}, match 2021={n_match}/{n_match+n_miss}, "
           f"INEI={n_inei_match}/{n_inei_match+n_inei_miss} -> {args.out}", file=sys.stderr)
 
 

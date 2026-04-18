@@ -33,10 +33,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Build panel (scrape ONPE)
-        run: python prep.py --out data/district_panel.csv
+      - name: Build panel (scrape ONPE) — retry on WAF transient
         env:
           PYTHONUNBUFFERED: "1"
+        run: |
+          set +e
+          for i in 1 2 3; do
+            echo "=== Scrape attempt $i ==="
+            python prep.py --out data/district_panel.csv && exit 0
+            echo "Scrape falló (intento $i). Esperando 60s antes de reintentar..."
+            sleep 60
+          done
+          echo "Scrape falló 3 veces — abortando sin tocar forecast actual." >&2
+          exit 1
 
       - name: Fit PyMC model
         run: python models/model_pymc.py --panel data/district_panel.csv --draws 500 --tune 500 --chains 2
