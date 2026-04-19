@@ -1,6 +1,6 @@
 {
   "modelo": "pymc_binomial_jerarquico",
-  "timestamp": "2026-04-19T02:02:26+00:00",
+  "timestamp": "2026-04-19T01:54:34+00:00",
   "snapshot_panel": "district_panel.csv",
   "n_distritos_usados": 1871,
   "votos_contados_Sanchez": 1876210,
@@ -22,129 +22,7 @@
     "JUNÍN": 171
   },
   "jee_taxonomia": {
-    "razones_top": [
-      [
-        "Acta con error aritmético",
-        3854
-      ],
-      [
-        "Acta sin firmas",
-        358
-      ],
-      [
-        "Acta con error aritmético, Acta ilegible",
-        320
-      ],
-      [
-        "Acta impugnada",
-        311
-      ],
-      [
-        "Acta con error aritmético, Acta impugnada",
-        86
-      ],
-      [
-        "Acta con error aritmético, Acta sin firmas",
-        54
-      ],
-      [
-        "Acta ilegible",
-        33
-      ],
-      [
-        "Acta incompleta",
-        32
-      ],
-      [
-        "Acta incompleta, Acta sin firmas",
-        26
-      ],
-      [
-        "Otras",
-        18
-      ]
-    ],
-    "locales_top": [
-      {
-        "distrito": "CASTILLA",
-        "local": "UNIVERSIDAD NACIONAL DE PIURA - UNP",
-        "actas_obs": 15
-      },
-      {
-        "distrito": "SAN JUAN DE MIRAFLORES",
-        "local": "IE 6038 OLLANTAY",
-        "actas_obs": 10
-      },
-      {
-        "distrito": "SANTIAGO DE SURCO",
-        "local": "IE 6082 LOS PROCERES",
-        "actas_obs": 10
-      },
-      {
-        "distrito": "VIRÚ",
-        "local": "IE 80074 MARIA CARIDAD AGUERO DE ARRESSE",
-        "actas_obs": 9
-      },
-      {
-        "distrito": "BELÉN",
-        "local": "IE 60993 RAMON CASTILLA Y MARQUESADO",
-        "actas_obs": 9
-      },
-      {
-        "distrito": "SAN JUAN DE MIRAFLORES",
-        "local": "IE FE Y ALEGRIA 65",
-        "actas_obs": 8
-      },
-      {
-        "distrito": "CIENEGUILLA",
-        "local": "IE JESUS SACRAMENTADO",
-        "actas_obs": 8
-      },
-      {
-        "distrito": "LOS BAÑOS DEL INCA",
-        "local": "IE 82040 VIRGEN DE LA NATIVIDAD",
-        "actas_obs": 8
-      },
-      {
-        "distrito": "CALLERIA",
-        "local": "IE EMBLEMATICA 64753 FAUSTINO MALDONADO",
-        "actas_obs": 8
-      },
-      {
-        "distrito": "VEINTISÉIS DE OCTUBRE",
-        "local": "IE 14008 LEONOR CERNA DE VALDIVIEZO",
-        "actas_obs": 8
-      }
-    ],
-    "horas_digitalizacion": {
-      "00": 423,
-      "01": 235,
-      "02": 202,
-      "03": 84,
-      "04": 98,
-      "05": 80,
-      "06": 65,
-      "07": 98,
-      "08": 95,
-      "09": 105,
-      "10": 109,
-      "11": 167,
-      "12": 180,
-      "13": 183,
-      "14": 147,
-      "15": 149,
-      "16": 163,
-      "17": 126,
-      "18": 119,
-      "19": 95,
-      "20": 88,
-      "21": 306,
-      "22": 484,
-      "23": 549
-    },
-    "flash_lt_30s": 1,
-    "nocturno_2_5am": 464,
-    "total_scrapeadas": 5104
+    "error": "'float' object has no attribute 'lower'"
   },
   "prediccion": {
     "Sanchez": {
@@ -177,7 +55,7 @@
     "rhat_max_la": 1.0,
     "kappa_mean_sanchez": 58.65362497902298,
     "kappa_mean_la": 169.7036149335763,
-    "tiempo_segundos": 180.7
+    "tiempo_segundos": 182.1
   },
   "econometria": {
     "covariables": [
