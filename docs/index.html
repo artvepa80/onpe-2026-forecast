@@ -80,6 +80,43 @@
   </div>
 
   <div class="card" style="margin-top: 1.5rem;">
+    <h2>Taxonomía de actas observadas (JEE)</h2>
+    <div class="label" style="margin-bottom: 0.6rem;">
+      Razón por la que cada acta fue enviada al Jurado. El modelo ahora usa una tasa
+      de anulación diferenciada por tipo (error aritmético se resuelve casi siempre;
+      impugnada puede anularse hasta 50%).
+    </div>
+    <table id="razones">
+      <thead><tr><th>Razón</th><th class="num">Actas</th><th class="num">%</th><th class="num">P(anulación)</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div id="razones-empty" class="label" style="display:none;">
+      Aún no se ha scrapeado el metadata de actas JEE.
+    </div>
+  </div>
+
+  <div class="card" style="margin-top: 1.5rem;">
+    <h2>Locales con más actas observadas</h2>
+    <div class="label" style="margin-bottom: 0.6rem;">
+      Locales de votación con mayor concentración — potenciales problemas sistémicos.
+    </div>
+    <table id="locales">
+      <thead><tr><th>Distrito</th><th>Local</th><th class="num">Actas obs.</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top: 1.5rem;">
+    <h2>Distribución horaria de digitalización (Lima)</h2>
+    <div class="label" style="margin-bottom: 0.6rem;">
+      ¿Cuándo ONPE digitalizó las actas observadas? Picos 21:00–02:00 son normales
+      (mesas cierran tarde). Procesamiento 2–5 AM: <b id="nocturno-count">–</b>.
+      Actas "flash" (&lt;30s): <b id="flash-count">–</b>.
+    </div>
+    <canvas id="horas-chart" height="180"></canvas>
+  </div>
+
+  <div class="card" style="margin-top: 1.5rem;">
     <h2>Coeficientes econométricos (Capa 1)</h2>
     <div class="label" style="margin-bottom: 0.6rem;">
       γ = efecto de cada covariable estandarizada sobre logit(voto). Positivo = más voto;
@@ -261,6 +298,71 @@ function renderJEE(report) {
     </td></tr>`);
 }
 
+const P_ANUL = {
+  "Acta impugnada": 50,
+  "Acta ilegible": 15,
+  "Acta incompleta": 5,
+  "Acta con error aritmético": 3,
+  "Acta sin firmas": 3,
+  "Otras": 8,
+};
+function pAnulCombinado(razon) {
+  const parts = razon.split(",").map(s => s.trim());
+  return Math.max(...parts.map(p => P_ANUL[p] || 8));
+}
+
+function renderTaxonomia(report) {
+  const razEmpty = document.getElementById("razones-empty");
+  const razBody = document.querySelector("#razones tbody");
+  const locBody = document.querySelector("#locales tbody");
+  razBody.innerHTML = ""; locBody.innerHTML = "";
+  const t = report && report.jee_taxonomia;
+  if (!t || !t.razones_top || !t.razones_top.length) {
+    razEmpty.style.display = "block";
+    return;
+  }
+  razEmpty.style.display = "none";
+  const total = t.razones_top.reduce((a, [, n]) => a + n, 0);
+  for (const [raz, n] of t.razones_top) {
+    const p = (n / total * 100).toFixed(1);
+    const pAnul = pAnulCombinado(raz);
+    const color = pAnul >= 30 ? "var(--neg)" : pAnul >= 10 ? "#ca8a04" : "var(--pos)";
+    razBody.insertAdjacentHTML("beforeend", `
+      <tr>
+        <td>${raz}</td>
+        <td class="num">${n.toLocaleString("es-PE")}</td>
+        <td class="num">${p}%</td>
+        <td class="num" style="color:${color}; font-weight:600;">~${pAnul}%</td>
+      </tr>`);
+  }
+  for (const l of (t.locales_top || [])) {
+    locBody.insertAdjacentHTML("beforeend", `
+      <tr><td>${l.distrito}</td><td>${l.local}</td><td class="num">${l.actas_obs}</td></tr>`);
+  }
+  document.getElementById("flash-count").textContent = t.flash_lt_30s ?? "–";
+  document.getElementById("nocturno-count").textContent = t.nocturno_2_5am ?? "–";
+
+  // Histograma horario
+  const hist = t.horas_digitalizacion || {};
+  const labels = Array.from({length:24}, (_,i)=>String(i).padStart(2,"0")+":00");
+  const data = labels.map((_,i) => hist[String(i).padStart(2,"0")] || 0);
+  if (window._histChart) window._histChart.destroy();
+  window._histChart = new Chart(document.getElementById("horas-chart"), {
+    type: "bar",
+    data: { labels, datasets: [{
+      label: "Actas digitalizadas", data,
+      backgroundColor: data.map((_,h) =>
+        (h >= 2 && h <= 5) ? "rgba(220,38,38,0.7)" : "rgba(37,99,235,0.6)"),
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false },
+                 tooltip: { callbacks: { label: c => `${c.parsed.y} actas a las ${c.label}` } } },
+      scales: { y: { beginAtZero: true } },
+    }
+  });
+}
+
 function renderEconometrics(report) {
   const tbody = document.querySelector("#econ tbody");
   tbody.innerHTML = "";
@@ -292,6 +394,7 @@ load().then(({ pymc, brms }) => {
   renderTable({ PyMC: pymc, ...(brms ? { brms } : {}) });
   renderChart({ PyMC: pymc, ...(brms ? { brms } : {}) });
   renderJEE(pymc);
+  renderTaxonomia(pymc);
   renderEconometrics(pymc);
   document.getElementById("psanchez-pymc").textContent = pymc ? pct(pymc.prediccion["P(Sanchez > LA)"]) : "–";
   if (brms) {

@@ -141,8 +141,7 @@ def fit_candidate(df: pd.DataFrame, candidato: str, baseline_col: str,
 def posterior_final_votes(idata, df, candidato,
                           swing_sd_logit: float = 0.08,
                           jee_extra_sd_logit: float = 0.15,
-                          jee_anulacion_alpha: float = 3.0,
-                          jee_anulacion_beta: float = 57.0):
+                          jee_anul_concentration: float = 40.0):
     """Genera vector (draws,) de votos finales nacionales del candidato.
 
     Modelo de las actas pendientes en DOS bloques:
@@ -181,8 +180,21 @@ def posterior_final_votes(idata, df, candidato,
     b = np.clip((1 - p_pend_normal) * kappa_draws, 1e-3, None)
     y_normal = rng.binomial(n_normal, rng.beta(a, b))
 
-    # (B) Pendientes JEE con fracción de anulación
-    frac_anul = rng.beta(jee_anulacion_alpha, jee_anulacion_beta, size=n_draws)       # (draws,)
+    # (B) Pendientes JEE con fracción de anulación — POR DISTRITO (taxonomía)
+    # Cada distrito tiene su propio prior Beta(α,β) con α/(α+β) = jee_expected_p_anul_d
+    # y concentración total = jee_anul_concentration. Districts sin data usan 5% genérico.
+    p_anul_prior = df.get("jee_expected_p_anul")
+    if p_anul_prior is None:
+        p_anul_mean = np.full(len(df), 0.05)
+    else:
+        p_anul_mean = np.clip(p_anul_prior.fillna(0.05).values, 0.01, 0.80)
+    K = jee_anul_concentration
+    alpha_d = (p_anul_mean * K).reshape(-1, 1)    # (dist, 1)
+    beta_d  = ((1.0 - p_anul_mean) * K).reshape(-1, 1)
+    # Broadcast con (1, draws) para vectorizar
+    alpha_b = np.broadcast_to(alpha_d, (len(df), n_draws))
+    beta_b  = np.broadcast_to(beta_d,  (len(df), n_draws))
+    frac_anul = rng.beta(alpha_b, beta_b)                                             # (dist, draws)
     n_jee_efectivo = (n_jee * (1.0 - frac_anul)).round().astype(int)                  # (dist, draws)
     a_j = np.clip(p_pend_jee * kappa_draws, 1e-3, None)
     b_j = np.clip((1 - p_pend_jee) * kappa_draws, 1e-3, None)
@@ -205,6 +217,50 @@ def _coef_summary(idata, name: str) -> dict:
     q = np.quantile(v, [0.025, 0.5, 0.975])
     return {"mediana": float(q[1]), "ci_low": float(q[0]), "ci_high": float(q[2]),
             "sign_cert": float((v > 0).mean() if q[1] > 0 else (v < 0).mean())}
+
+
+def _jee_taxonomia_summary(df: pd.DataFrame) -> dict:
+    """Lee el CSV de metadata JEE y devuelve resumen para Pages."""
+    meta_path = Path(__file__).resolve().parent.parent / "data/actas_jee_metadata.csv"
+    if not meta_path.exists():
+        return {}
+    try:
+        m = pd.read_csv(meta_path)
+        m = m[m["idEleccion"] == 10]  # presidencial
+        # Normalizar razones
+        def norm(r):
+            r = (r or "").lower()
+            tags = []
+            if "impugnada" in r: tags.append("Acta impugnada")
+            if "aritm" in r: tags.append("Acta con error aritmético")
+            if "sin firmas" in r: tags.append("Acta sin firmas")
+            if "ilegible" in r: tags.append("Acta ilegible")
+            if "incompleta" in r: tags.append("Acta incompleta")
+            return ", ".join(sorted(set(tags))) or "Otras"
+        m["razon_norm"] = m["estadoDescripcionActaResolucion"].apply(norm)
+        razones = m["razon_norm"].value_counts().head(10).to_dict()
+        # Locales más observadas
+        locales = (m.dropna(subset=["nombreLocalVotacion"])
+                    .groupby(["ubigeoNivel03","nombreLocalVotacion"])
+                    .size().sort_values(ascending=False).head(10))
+        locales_list = [{"distrito": d, "local": l, "actas_obs": int(n)}
+                        for (d, l), n in locales.items()]
+        # Histograma horario
+        m["hora"] = m["hora_digitaliz_lima"].str.extract(r" (\d{2}):")[0]
+        hist = m["hora"].value_counts().sort_index().to_dict()
+        # Flash + nocturnas
+        flash_count = int(m["flag_flash_acta"].fillna(False).sum())
+        nocturno_count = int(m["flag_hora_anomala"].fillna(False).sum())
+        return {
+            "razones_top": list(razones.items()),
+            "locales_top": locales_list,
+            "horas_digitalizacion": {k: int(v) for k, v in hist.items()},
+            "flash_lt_30s": flash_count,
+            "nocturno_2_5am": nocturno_count,
+            "total_scrapeadas": int(len(m)),
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 
 def _gamma_summary(idata, cov_cols: list[str]) -> dict:
@@ -272,6 +328,7 @@ def main():
               .sort_values(ascending=False).head(10).to_dict()
             if "actas_jee" in df.columns else {}
         ),
+        "jee_taxonomia": _jee_taxonomia_summary(df),
         "prediccion": {
             "Sanchez": summarize(votes_s, "Sanchez"),
             "LA": summarize(votes_la, "LA"),

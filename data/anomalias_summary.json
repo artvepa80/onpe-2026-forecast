@@ -1,0 +1,180 @@
+{
+  "total_actas_jee_scrapeadas": 5104,
+  "por_eleccion": {
+    "presidencial": 5104,
+    "senadores": 0,
+    "diputados": 0,
+    "parlamento_andino": 0
+  },
+  "presidencial": {
+    "razones_top": [
+      [
+        "Acta con error aritmético",
+        3853
+      ],
+      [
+        "Acta sin firmas",
+        356
+      ],
+      [
+        "Acta con error aritmético, Acta ilegible",
+        320
+      ],
+      [
+        "Acta impugnada",
+        311
+      ],
+      [
+        "Acta con error aritmético, Acta impugnada",
+        86
+      ],
+      [
+        "Acta con error aritmético, Acta sin firmas",
+        52
+      ],
+      [
+        "Acta ilegible",
+        33
+      ],
+      [
+        "Acta incompleta",
+        30
+      ],
+      [
+        "Acta incompleta, Acta sin firmas",
+        24
+      ],
+      [
+        "(sin dato)",
+        11
+      ],
+      [
+        "Acta con solicitud de nulidad",
+        7
+      ],
+      [
+        "Acta con error aritmético, Acta ilegible, Acta impugnada",
+        5
+      ],
+      [
+        "Acta incompleta, Acta sin datos, Acta sin firmas",
+        2
+      ],
+      [
+        "Acta con error aritmético, Acta sin datos, Acta sin firmas",
+        2
+      ],
+      [
+        "Acta incompleta, Acta sin datos",
+        2
+      ]
+    ],
+    "distribucion_horaria_digitalizacion": {
+      "0": 423,
+      "1": 235,
+      "2": 202,
+      "3": 84,
+      "4": 98,
+      "5": 80,
+      "6": 65,
+      "7": 98,
+      "8": 95,
+      "9": 105,
+      "10": 109,
+      "11": 167,
+      "12": 180,
+      "13": 183,
+      "14": 147,
+      "15": 149,
+      "16": 163,
+      "17": 126,
+      "18": 119,
+      "19": 95,
+      "20": 88,
+      "21": 306,
+      "22": 484,
+      "23": 549
+    },
+    "actas_flash_seg_lt_30": 1,
+    "actas_nocturno_2_5am": 464,
+    "por_departamento": {
+      "LIMA": 1263,
+      "PIURA": 428,
+      "LORETO": 401,
+      "LA LIBERTAD": 389,
+      "ÁNCASH": 257,
+      "CAJAMARCA": 239,
+      "ICA": 230,
+      "HUÁNUCO": 212,
+      "UCAYALI": 188,
+      "JUNÍN": 171,
+      "LAMBAYEQUE": 169,
+      "SAN MARTÍN": 162,
+      "CUSCO": 144,
+      "CALLAO": 126,
+      "PUNO": 103,
+      "AYACUCHO": 92,
+      "AREQUIPA": 90,
+      "AMAZONAS": 81,
+      "HUANCAVELICA": 63,
+      "TUMBES": 59,
+      "PASCO": 55,
+      "MADRE DE DIOS": 54,
+      "TACNA": 52,
+      "APURÍMAC": 47,
+      "MOQUEGUA": 29
+    },
+    "locales_con_mas_obs": [
+      {
+        "distrito": "CASTILLA",
+        "local": "UNIVERSIDAD NACIONAL DE PIURA - UNP",
+        "actas_obs": 15
+      },
+      {
+        "distrito": "SAN JUAN DE MIRAFLORES",
+        "local": "IE 6038 OLLANTAY",
+        "actas_obs": 10
+      },
+      {
+        "distrito": "SANTIAGO DE SURCO",
+        "local": "IE 6082 LOS PROCERES",
+        "actas_obs": 10
+      },
+      {
+        "distrito": "VIRÚ",
+        "local": "IE 80074 MARIA CARIDAD AGUERO DE ARRESSE",
+        "actas_obs": 9
+      },
+      {
+        "distrito": "BELÉN",
+        "local": "IE 60993 RAMON CASTILLA Y MARQUESADO",
+        "actas_obs": 9
+      },
+      {
+        "distrito": "LOS BAÑOS DEL INCA",
+        "local": "IE 82040 VIRGEN DE LA NATIVIDAD",
+        "actas_obs": 8
+      },
+      {
+        "distrito": "CIENEGUILLA",
+        "local": "IE JESUS SACRAMENTADO",
+        "actas_obs": 8
+      },
+      {
+        "distrito": "SAN JUAN DE MIRAFLORES",
+        "local": "IE FE Y ALEGRIA 65",
+        "actas_obs": 8
+      },
+      {
+        "distrito": "VEINTISÉIS DE OCTUBRE",
+        "local": "IE 14008 LEONOR CERNA DE VALDIVIEZO",
+        "actas_obs": 8
+      },
+      {
+        "distrito": "CALLERIA",
+        "local": "IE EMBLEMATICA 64753 FAUSTINO MALDONADO",
+        "actas_obs": 8
+      }
+    ]
+  }
+}

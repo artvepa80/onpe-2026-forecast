@@ -261,6 +261,40 @@ def main():
     inei = load_inei_covariates(Path(args.inei)) if Path(args.inei).exists() else {}
     print(f"  distritos INEI: {len(inei)}", file=sys.stderr)
 
+    # Cargar metadata actas JEE si existe → tasa anulación por distrito
+    jee_meta_path = DATA / "actas_jee_metadata.csv"
+    jee_by_dist: dict[str, dict] = {}
+    if jee_meta_path.exists():
+        p_anul = {
+            "Acta con error aritmético": 0.03,
+            "Acta sin firmas":            0.03,
+            "Acta incompleta":            0.05,
+            "Acta ilegible":              0.15,
+            "Acta impugnada":             0.50,
+        }
+        with jee_meta_path.open(encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                if row.get("idEleccion") not in ("10", 10):
+                    continue
+                ub = str(row.get("idUbigeo") or "").zfill(6)
+                d = jee_by_dist.setdefault(ub, {
+                    "n_error_arith": 0, "n_sin_firmas": 0, "n_impugnada": 0,
+                    "n_ilegible": 0, "n_incompleta": 0, "n_otras": 0,
+                    "total_jee": 0, "expected_anulaciones": 0.0,
+                })
+                raz = (row.get("estadoDescripcionActaResolucion") or "").lower()
+                d["total_jee"] += 1
+                # Peor caso: si una razón tiene >1 categoría, tomamos la de mayor riesgo
+                p = 0.0
+                if "impugnada" in raz:    p = max(p, 0.50); d["n_impugnada"] += 1
+                if "ilegible" in raz:     p = max(p, 0.15); d["n_ilegible"] += 1
+                if "incompleta" in raz:   p = max(p, 0.05); d["n_incompleta"] += 1
+                if "aritm" in raz:        p = max(p, 0.03); d["n_error_arith"] += 1
+                if "sin firmas" in raz:   p = max(p, 0.03); d["n_sin_firmas"] += 1
+                if p == 0.0:              p = 0.08; d["n_otras"] += 1  # default conservador
+                d["expected_anulaciones"] += p
+        print(f"  distritos con JEE metadata: {len(jee_by_dist)}", file=sys.stderr)
+
     fields = [
         "ubigeo_dep", "ubigeo_prov", "ubigeo_dist",
         "departamento", "provincia", "distrito",
@@ -268,6 +302,10 @@ def main():
         "total_actas", "actas_contab", "actas_pendientes", "pct_avance_dist",
         # Nuevo: desglose JEE (Capa 1 — resolución legal de observadas)
         "actas_jee_enviadas", "actas_jee_pendientes", "actas_jee", "actas_pend_normal",
+        # Taxonomía JEE por distrito (del metadata scraping)
+        "jee_n_error_arith", "jee_n_sin_firmas", "jee_n_impugnada",
+        "jee_n_ilegible", "jee_n_incompleta", "jee_n_otras",
+        "jee_expected_p_anul",
         "pct_RP_2021", "pct_JpP_2021", "total_emitidos_2021",
         # Covariables INEI (Capa 1 econométrica)
         "altitud_m", "idh_2019", "pct_pobreza", "pct_pobreza_ext",
@@ -299,9 +337,19 @@ def main():
             for k in ("altitud_m","idh_2019","pct_pobreza","pct_pobreza_ext",
                       "densidad_2020","vuln_alim","macroregion","lat","lon","superficie_km2"):
                 row[k] = ic.get(k)
+            # JEE taxonomía
+            jd = jee_by_dist.get(row["ubigeo_dist"]) or {}
+            row["jee_n_error_arith"] = jd.get("n_error_arith", 0)
+            row["jee_n_sin_firmas"]  = jd.get("n_sin_firmas", 0)
+            row["jee_n_impugnada"]   = jd.get("n_impugnada", 0)
+            row["jee_n_ilegible"]    = jd.get("n_ilegible", 0)
+            row["jee_n_incompleta"]  = jd.get("n_incompleta", 0)
+            row["jee_n_otras"]       = jd.get("n_otras", 0)
+            tot = jd.get("total_jee", 0)
+            row["jee_expected_p_anul"] = (jd["expected_anulaciones"] / tot) if tot > 0 else 0.05
             w.writerow(row)
-    # Sanity check: scrape nacional debería tener >1500 filas (1874 distritos total)
-    min_rows = 100 if args.dep else 1500
+    # Sanity check adaptativo: nacional ≥1500, por dep ≥5 (CALLAO=7, MOQUEGUA/MDD pocos)
+    min_rows = 5 if args.dep else 1500
     if n_rows < min_rows:
         print(f"ERROR: solo {n_rows} filas scrapeadas (esperado ≥{min_rows}). "
               f"Probable bloqueo WAF o caída ONPE. Abortando.", file=sys.stderr)
