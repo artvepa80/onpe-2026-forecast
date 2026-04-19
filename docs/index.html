@@ -139,6 +139,109 @@
   </footer>
 </div>
 
+<!-- ===== Chatbot widget ===== -->
+<style>
+  #chat-btn { position: fixed; bottom: 1.2rem; right: 1.2rem; width: 56px; height: 56px;
+    border-radius: 50%; background: var(--accent); color: white; border: none; cursor: pointer;
+    font-size: 1.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 1000; }
+  #chat-btn:hover { transform: scale(1.05); }
+  #chat-box { position: fixed; bottom: 5.5rem; right: 1.2rem; width: 360px; max-width: calc(100vw - 2rem);
+    height: 500px; max-height: calc(100vh - 8rem); background: white; border: 1px solid #e5e7eb;
+    border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); display: none; flex-direction: column;
+    z-index: 1000; }
+  #chat-box.open { display: flex; }
+  #chat-head { padding: 0.8rem 1rem; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+  #chat-head h3 { margin: 0; font-size: 0.95rem; }
+  #chat-head small { color: var(--muted); font-size: 0.75rem; }
+  #chat-close { border: none; background: none; font-size: 1.2rem; cursor: pointer; color: var(--muted); }
+  #chat-msgs { flex: 1; overflow-y: auto; padding: 0.8rem; display: flex; flex-direction: column; gap: 0.6rem; }
+  .chat-m { padding: 0.6rem 0.8rem; border-radius: 8px; max-width: 85%; font-size: 0.9rem; line-height: 1.4; }
+  .chat-m.bot { background: #f3f4f6; align-self: flex-start; }
+  .chat-m.user { background: var(--accent); color: white; align-self: flex-end; }
+  .chat-m.error { background: #fee2e2; color: #991b1b; align-self: flex-start; }
+  .chat-m.typing { color: var(--muted); font-style: italic; }
+  #chat-suggest { padding: 0 0.8rem 0.6rem; display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .chat-sug { font-size: 0.75rem; padding: 0.3rem 0.6rem; border-radius: 12px; border: 1px solid #d1d5db;
+    background: white; cursor: pointer; }
+  .chat-sug:hover { background: #f3f4f6; }
+  #chat-form { display: flex; padding: 0.6rem; gap: 0.4rem; border-top: 1px solid #eee; }
+  #chat-input { flex: 1; padding: 0.5rem 0.7rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem; }
+  #chat-send { padding: 0.5rem 1rem; background: var(--accent); color: white; border: none; border-radius: 6px; cursor: pointer; }
+  #chat-send:disabled { background: #9ca3af; cursor: not-allowed; }
+</style>
+<button id="chat-btn" title="Pregunta sobre el forecast">💬</button>
+<div id="chat-box">
+  <div id="chat-head">
+    <div><h3>Asistente del forecast</h3><small>Llama 3.1 · responde con nuestros datos</small></div>
+    <button id="chat-close">✕</button>
+  </div>
+  <div id="chat-msgs"></div>
+  <div id="chat-suggest">
+    <button class="chat-sug">¿Quién gana 2° puesto?</button>
+    <button class="chat-sug">¿Qué son las actas JEE?</button>
+    <button class="chat-sug">Cómo funciona el modelo?</button>
+    <button class="chat-sug">¿Por qué Sánchez gana pobreza?</button>
+  </div>
+  <form id="chat-form">
+    <input id="chat-input" type="text" placeholder="Pregunta sobre el forecast..." maxlength="500" autocomplete="off">
+    <button id="chat-send" type="submit">Enviar</button>
+  </form>
+</div>
+<script>
+// Configurar con la URL de tu Worker desplegado
+const CHAT_API = "https://onpe-forecast-chat.artvepa80.workers.dev/chat";
+(() => {
+  const $ = s => document.querySelector(s);
+  const btn = $("#chat-btn"), box = $("#chat-box"), close = $("#chat-close");
+  const msgs = $("#chat-msgs"), form = $("#chat-form"), input = $("#chat-input"), send = $("#chat-send");
+  const history = [];
+  const addMsg = (role, text, cls="") => {
+    const d = document.createElement("div");
+    d.className = "chat-m " + (cls || role);
+    d.textContent = text;
+    msgs.appendChild(d);
+    msgs.scrollTop = msgs.scrollHeight;
+    return d;
+  };
+  addMsg("bot", "¡Hola! Pregúntame sobre la predicción, las actas JEE, o los coeficientes econométricos. Respondo solo con nuestros datos.");
+
+  btn.onclick = () => { box.classList.toggle("open"); if (box.classList.contains("open")) input.focus(); };
+  close.onclick = () => box.classList.remove("open");
+  document.querySelectorAll(".chat-sug").forEach(b => b.onclick = () => {
+    input.value = b.textContent; form.dispatchEvent(new Event("submit"));
+  });
+
+  form.onsubmit = async e => {
+    e.preventDefault();
+    const q = input.value.trim();
+    if (!q) return;
+    input.value = ""; send.disabled = true;
+    addMsg("user", q);
+    history.push({role: "user", content: q});
+    const typing = addMsg("bot", "Pensando…", "typing");
+    try {
+      const r = await fetch(CHAT_API, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({question: q, history: history.slice(-8)}),
+      });
+      const data = await r.json();
+      typing.remove();
+      if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+      const answer = data.answer || "(sin respuesta)";
+      addMsg("bot", answer);
+      history.push({role: "assistant", content: answer});
+    } catch (err) {
+      typing.remove();
+      addMsg("bot", "Error: " + err.message + ". ¿El Worker está desplegado? Ver docs/index.html para configurar CHAT_API.", "error");
+    } finally {
+      send.disabled = false;
+      input.focus();
+    }
+  };
+})();
+</script>
+
 <script>
 const fmt = n => n == null ? "–" : n.toLocaleString("es-PE", { maximumFractionDigits: 0 });
 const pct = p => p == null ? "–" : (p * 100).toFixed(1) + "%";
