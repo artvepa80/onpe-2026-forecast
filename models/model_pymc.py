@@ -229,7 +229,9 @@ def _jee_taxonomia_summary(df: pd.DataFrame) -> dict:
         m = m[m["idEleccion"] == 10]  # presidencial
         # Normalizar razones
         def norm(r):
-            r = (r or "").lower()
+            if not isinstance(r, str):
+                return "Otras"
+            r = r.lower()
             tags = []
             if "impugnada" in r: tags.append("Acta impugnada")
             if "aritm" in r: tags.append("Acta con error aritmético")
