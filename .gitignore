@@ -9,3 +9,8 @@ onpe_distritos*.csv
 /tmp/
 
 # Raw 2021 baseline is tracked (used by prep), but keep heavy intermediate off
+
+# Chatbot build artifacts
+chatbot/node_modules/
+chatbot/package-lock.json
+chatbot/.wrangler/
