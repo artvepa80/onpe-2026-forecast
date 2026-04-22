@@ -1,21 +1,21 @@
 {
   "modelo": "pymc_binomial_jerarquico",
-  "timestamp": "2026-04-22T20:38:06+00:00",
+  "timestamp": "2026-04-22T21:00:12+00:00",
   "snapshot_panel": "district_panel.csv",
   "n_distritos_usados": 1873,
-  "votos_contados_Sanchez": 1893027,
-  "votos_contados_LA": 1830497,
-  "votos_pendientes_estimados": 807029,
+  "votos_contados_Sanchez": 1893544,
+  "votos_contados_LA": 1830624,
+  "votos_pendientes_estimados": 804584,
   "votos_pend_normal": 0,
-  "votos_pend_jee": 807029,
-  "jee_total_nacional": 4660,
+  "votos_pend_jee": 804584,
+  "jee_total_nacional": 4645,
   "jee_por_departamento": {
     "LIMA": 1335,
     "PIURA": 428,
     "LORETO": 371,
-    "ÁNCASH": 243,
-    "LA LIBERTAD": 230,
+    "ÁNCASH": 242,
     "ICA": 228,
+    "LA LIBERTAD": 227,
     "UCAYALI": 184,
     "CAJAMARCA": 172,
     "JUNÍN": 171,
@@ -149,22 +149,22 @@
   "prediccion": {
     "Sanchez": {
       "candidato": "Sanchez",
-      "media": 1995542.924,
-      "mediana": 1995043.0,
-      "ci_low": 1971746.4,
-      "ci_high": 2022144.075
+      "media": 1995510.011,
+      "mediana": 1994917.0,
+      "ci_low": 1972416.0,
+      "ci_high": 2021764.0999999999
     },
     "LA": {
       "candidato": "LA",
-      "media": 1913138.491,
-      "mediana": 1912515.0,
-      "ci_low": 1891890.225,
-      "ci_high": 1939090.3
+      "media": 1913032.449,
+      "mediana": 1912452.5,
+      "ci_low": 1891356.75,
+      "ci_high": 1938017.35
     },
     "diferencia_Sanchez_minus_LA": {
-      "mediana": 82378.5,
-      "ci_low": 75841.75,
-      "ci_high": 89469.175
+      "mediana": 82385.0,
+      "ci_low": 76494.5,
+      "ci_high": 88821.825
     },
     "P(Sanchez > LA)": 1.0
   },
@@ -173,11 +173,11 @@
     "tune": 500,
     "chains": 2,
     "likelihood": "BetaBinomial (con overdispersion kappa)",
-    "rhat_max_sanchez": 1.06,
-    "rhat_max_la": 1.02,
-    "kappa_mean_sanchez": 57.545489816959346,
-    "kappa_mean_la": 170.86621158820495,
-    "tiempo_segundos": 242.6
+    "rhat_max_sanchez": 1.12,
+    "rhat_max_la": 1.01,
+    "kappa_mean_sanchez": 59.467904456383565,
+    "kappa_mean_la": 171.00015796971468,
+    "tiempo_segundos": 246.8
   },
   "econometria": {
     "covariables": [
@@ -189,80 +189,80 @@
     ],
     "beta_2021": {
       "Sanchez": {
-        "mediana": -0.06345236263152437,
-        "ci_low": -0.11127628308645673,
-        "ci_high": -0.019921668765401617,
-        "sign_cert": 0.999
+        "mediana": -0.06471248469831872,
+        "ci_low": -0.11000202939553783,
+        "ci_high": -0.01695142404021069,
+        "sign_cert": 0.996
       },
       "LA": {
-        "mediana": 0.34288228700367474,
-        "ci_low": 0.2824047658272754,
-        "ci_high": 0.39844587476100096,
+        "mediana": 0.3427008444744382,
+        "ci_low": 0.28307580304146995,
+        "ci_high": 0.3967937949315645,
         "sign_cert": 1.0
       }
     },
     "gamma": {
       "Sanchez": {
         "altitud_km_z": {
-          "mediana": 0.009030226255017336,
-          "ci_low": -0.033940544960566615,
-          "ci_high": 0.04996513042015558,
-          "sign_cert": 0.661
+          "mediana": 0.006966172706148417,
+          "ci_low": -0.0351336436313094,
+          "ci_high": 0.04859527166410775,
+          "sign_cert": 0.628
         },
         "idh_z": {
-          "mediana": -0.1338189765269977,
-          "ci_low": -0.20580225737337457,
-          "ci_high": -0.05882000206964207,
+          "mediana": -0.12898979295251822,
+          "ci_low": -0.20275500710845312,
+          "ci_high": -0.05776993488084406,
           "sign_cert": 1.0
         },
         "pobreza_z": {
-          "mediana": 0.22129102278268903,
-          "ci_low": 0.16768944608100145,
-          "ci_high": 0.2734378732080939,
+          "mediana": 0.22252918104001074,
+          "ci_low": 0.1670177571508765,
+          "ci_high": 0.27604738641987403,
           "sign_cert": 1.0
         },
         "log_densidad_z": {
-          "mediana": -0.09220138138610379,
-          "ci_low": -0.12791205288151053,
-          "ci_high": -0.05748809254187702,
+          "mediana": -0.09153722193107658,
+          "ci_low": -0.12280290026816432,
+          "ci_high": -0.05864692145551082,
           "sign_cert": 1.0
         },
         "vuln_alim_z": {
-          "mediana": 0.283562284582762,
-          "ci_low": 0.2016176460664171,
-          "ci_high": 0.36825579154125115,
+          "mediana": 0.2878785336853019,
+          "ci_low": 0.20622683188431518,
+          "ci_high": 0.37157493381003326,
           "sign_cert": 1.0
         }
       },
       "LA": {
         "altitud_km_z": {
-          "mediana": -0.07117897075091202,
-          "ci_low": -0.11013370901902086,
-          "ci_high": -0.03516163369578991,
+          "mediana": -0.07093708825906056,
+          "ci_low": -0.1114647601258302,
+          "ci_high": -0.033793118850656154,
           "sign_cert": 1.0
         },
         "idh_z": {
-          "mediana": 0.18144563366488176,
-          "ci_low": 0.11574822539153046,
-          "ci_high": 0.2455822364169386,
+          "mediana": 0.1835290311513453,
+          "ci_low": 0.11202521513369312,
+          "ci_high": 0.2502519411046335,
           "sign_cert": 1.0
         },
         "pobreza_z": {
-          "mediana": -0.20402292810594302,
-          "ci_low": -0.26020380377616287,
-          "ci_high": -0.14561442391417492,
+          "mediana": -0.2030282962800697,
+          "ci_low": -0.2612616227352024,
+          "ci_high": -0.14532393739921448,
           "sign_cert": 1.0
         },
         "log_densidad_z": {
-          "mediana": 0.09879833533901909,
-          "ci_low": 0.07358966676154226,
-          "ci_high": 0.12621570797199572,
+          "mediana": 0.09944933800777409,
+          "ci_low": 0.07217731140975074,
+          "ci_high": 0.12629950031070733,
           "sign_cert": 1.0
         },
         "vuln_alim_z": {
-          "mediana": 0.1159249602421946,
-          "ci_low": 0.0455580836970168,
-          "ci_high": 0.19673716970539157,
+          "mediana": 0.11677967088911417,
+          "ci_low": 0.04558066810020935,
+          "ci_high": 0.19730946541150077,
           "sign_cert": 1.0
         }
       }
