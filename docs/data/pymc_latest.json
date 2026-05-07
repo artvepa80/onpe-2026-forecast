@@ -1,6 +1,6 @@
 {
   "modelo": "pymc_binomial_jerarquico",
-  "timestamp": "2026-05-07T01:00:49+00:00",
+  "timestamp": "2026-05-07T01:54:06+00:00",
   "snapshot_panel": "district_panel.csv",
   "n_distritos_usados": 1873,
   "votos_contados_Sanchez": 1970329,
@@ -177,7 +177,7 @@
     "rhat_max_la": 1.01,
     "kappa_mean_sanchez": 56.304639266834045,
     "kappa_mean_la": 169.42876492010853,
-    "tiempo_segundos": 239.1
+    "tiempo_segundos": 240.3
   },
   "econometria": {
     "covariables": [
